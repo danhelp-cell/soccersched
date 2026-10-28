@@ -60,6 +60,7 @@ function setView(name) {
 
 function startDraft(start, end, allDay, extra) {
   PB.state.formMode = "create";
+  PB.state.opening = null;
   PB.state.selectedId = null;
   PB.state.dirty = false;
   PB.state.form = blankEvent(start, end || new Date(start.getTime() + 60 * 60000), !!allDay);
@@ -69,6 +70,17 @@ function startDraft(start, end, allDay, extra) {
 }
 
 function editEvent(event) {
+  if (event?.opening) {
+    PB.state.formMode = "opening";
+    PB.state.selectedId = event.id;
+    PB.state.opening = event;
+    PB.state.form = null;
+    PB.state.dirty = false;
+    if (PB.state.view !== "calendar") setView("calendar");
+    renderInspector();
+    return;
+  }
+  PB.state.opening = null;
   PB.state.formMode = "edit";
   PB.state.selectedId = event.id;
   PB.state.form = editable(event);

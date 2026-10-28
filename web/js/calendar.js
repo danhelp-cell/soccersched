@@ -1,12 +1,22 @@
 function matchesFilters(event) {
   const filters = PB.state.filters;
+  if (event.opening) {
+    if (filters.lateOnly || filters.type) return false;
+    if (filters.env && event.environment && event.environment !== filters.env) return false;
+    if (filters.surface && event.surfaceId && event.surfaceId !== filters.surface) return false;
+    if (filters.text) {
+      const blob = [event.place, event.holder, event.zone, event.notes, event.source].join(" ").toLowerCase();
+      if (!blob.includes(filters.text.toLowerCase())) return false;
+    }
+    return true;
+  }
   const teams = event.teamIds || [];
   if (PB.state.hiddenTeams.size && teams.length && teams.every((id) => PB.state.hiddenTeams.has(id))) return false;
   if (filters.hideCancelled && event.status === "cancelled") return false;
   if (filters.lateOnly && !event.latePriority) return false;
   if (filters.env && event.environment !== filters.env) return false;
-  if (filters.surfaces.size && !filters.surfaces.has(event.surfaceId)) return false;
-  if (filters.types.size && !filters.types.has(event.eventTypeId)) return false;
+  if (filters.surface && event.surfaceId !== filters.surface) return false;
+  if (filters.type && event.eventTypeId !== filters.type) return false;
   if (filters.text) {
     const blob = [event.title, event.locationLabel, event.placeDetail, event.opponent, event.notes, ...(event.teamNames || [])].join(" ").toLowerCase();
     if (!blob.includes(filters.text.toLowerCase())) return false;
@@ -31,8 +41,28 @@ function toFC(event) {
   };
 }
 
+function openToFC(opening) {
+  return {
+    id: opening.id,
+    title: opening.kind === "swap" ? "Swap" : "Open time",
+    start: opening.start,
+    end: opening.end,
+    editable: false,
+    startEditable: false,
+    durationEditable: false,
+    classNames: [opening.kind === "swap" ? "is-swap" : "is-open", opening.id === PB.state.selectedId ? "is-selected" : ""].filter(Boolean),
+    extendedProps: { ...opening, opening: true },
+  };
+}
+
 function paintEvent(info) {
   const event = info.event.extendedProps || {};
+  if (event.opening) {
+    info.el.style.background = "transparent";
+    info.el.style.color = "#171717";
+    info.el.style.borderLeft = "0";
+    return;
+  }
   const color = (event.teamColors && event.teamColors[0]) || event.typeColor || "#2f6a4a";
   info.el.style.background = tint(color, 0.82);
   info.el.style.borderLeft = "4px solid " + color;
@@ -79,7 +109,10 @@ function initCalendar() {
     events(info, success, failure) {
       API.events(info.start, info.end).then((data) => {
         PB.state.events = data.events || [];
-        success(PB.state.events.filter(matchesFilters).map(toFC));
+        PB.state.openings = data.openings || [];
+        const shown = PB.state.events.filter(matchesFilters).map(toFC);
+        const openings = PB.state.openings.filter(matchesFilters).map(openToFC);
+        success(shown.concat(openings));
         renderStatus();
         if (PB.state.formMode === "edit" && PB.state.selectedId && !PB.state.dirty) {
           const fresh = PB.state.events.find((event) => event.id === PB.state.selectedId);
@@ -91,6 +124,12 @@ function initCalendar() {
     },
     eventContent(arg) {
       const event = arg.event.extendedProps || {};
+      if (event.opening) {
+        const title = event.kind === "swap"
+          ? `Swap${event.holder ? " · " + event.holder : ""}`
+          : (event.use === "game" ? "Open game" : event.use === "practice" ? "Open practice" : "Open time");
+        return { html: `<div class="ev-title">${esc(title)}</div><div class="ev-meta">${esc([arg.timeText, event.place].filter(Boolean).join(" · "))}</div>` };
+      }
       const where = event.pitchName || event.locationLabel || "";
       const surface = event.surfaceName || "";
       const env = event.environmentResolved === "Indoor" ? "In" : event.environmentResolved === "Outdoor" ? "Out" : "";
@@ -165,6 +204,10 @@ function applyCalendarOptions() {
 }
 
 async function moveFCEvent(info) {
+  if (info.event.extendedProps?.opening) {
+    info.revert();
+    return;
+  }
   const before = editable(info.oldEvent.extendedProps);
   before.start = toLocalISO(info.oldEvent.start);
   before.end = toLocalISO(info.oldEvent.end || info.oldEvent.start);

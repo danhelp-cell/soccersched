@@ -27,6 +27,7 @@ type Database struct {
 	Events         []Event         `json:"events"`
 	Blackouts      []Blackout      `json:"blackouts"`
 	ExportProfiles []ExportProfile `json:"exportProfiles"`
+	Openings       []Opening       `json:"openings"`
 }
 
 type Settings struct {
@@ -56,6 +57,7 @@ type Settings struct {
 	OlderTeamsAvoidEarly bool     `json:"olderTeamsAvoidEarly"`
 	LegendEnabled        bool     `json:"legendEnabled"`
 	Theme                Theme    `json:"theme"`
+	ZoneName             string   `json:"zoneName"`
 }
 
 // Theme is the club's colours and type. Aurora Soccer is the built-in default.
@@ -203,6 +205,30 @@ type Blackout struct {
 	Reason  string `json:"reason"`
 }
 
+// Opening is a time from an imported timetable that is not yet this club's booking.
+// Open times are free for a practice or a game. Swaps are held by another Saskatoon Youth Soccer zone.
+type Opening struct {
+	ID          string `json:"id"`
+	Source      string `json:"source"`
+	Kind        string `json:"kind"`
+	Use         string `json:"use"`
+	Start       string `json:"start"`
+	End         string `json:"end"`
+	Place       string `json:"place"`
+	VenueID     string `json:"venueId"`
+	PitchID     string `json:"pitchId"`
+	SurfaceID   string `json:"surfaceId"`
+	Environment string `json:"environment"`
+	Zone        string `json:"zone"`
+	Holder      string `json:"holder"`
+	Age         string `json:"age"`
+	Notes       string `json:"notes"`
+	TeamID      string `json:"teamId"`
+	Status      string `json:"status"`
+	EventID     string `json:"eventId"`
+	Key         string `json:"key"`
+}
+
 // EventView is an event plus the names a calendar needs to draw it.
 type EventView struct {
 	Event
@@ -240,11 +266,15 @@ func (db *Database) Normalize() {
 	db.Events = nonNil(db.Events)
 	db.Blackouts = nonNil(db.Blackouts)
 	db.ExportProfiles = nonNil(db.ExportProfiles)
+	db.Openings = nonNil(db.Openings)
 	for i := range db.AgeGroups {
 		normalizeAgeGroup(&db.AgeGroups[i])
 	}
 	for i := range db.ExportProfiles {
 		normalizeExportProfile(&db.ExportProfiles[i])
+	}
+	for i := range db.Openings {
+		normalizeOpening(&db.Openings[i])
 	}
 	for i := range db.Events {
 		if db.Events[i].TeamIDs == nil {
@@ -276,6 +306,10 @@ func (s *Settings) Normalize() {
 	s.TimezoneLabel = strings.TrimSpace(s.TimezoneLabel)
 	if s.TimezoneLabel == "" {
 		s.TimezoneLabel = "Local time"
+	}
+	s.ZoneName = strings.TrimSpace(s.ZoneName)
+	if s.ZoneName == "" {
+		s.ZoneName = "Aurora"
 	}
 	if s.WeekStartsOn < 0 || s.WeekStartsOn > 6 {
 		s.WeekStartsOn = 1
@@ -411,6 +445,27 @@ func normalizeAgeGroup(g *AgeGroup) {
 	if g.WindowStart != "" && g.WindowEnd != "" && we <= ws {
 		g.WindowStart = ""
 		g.WindowEnd = ""
+	}
+}
+
+func normalizeOpening(o *Opening) {
+	o.Source = strings.TrimSpace(o.Source)
+	o.Place = strings.TrimSpace(o.Place)
+	o.Holder = strings.TrimSpace(o.Holder)
+	o.Notes = strings.TrimSpace(o.Notes)
+	o.Age = strings.TrimSpace(o.Age)
+	o.Zone = strings.TrimSpace(o.Zone)
+	o.Key = strings.TrimSpace(o.Key)
+	if o.Kind != "swap" {
+		o.Kind = "open"
+	}
+	switch o.Use {
+	case "practice", "game", "either":
+	default:
+		o.Use = "either"
+	}
+	if o.Status != "booked" {
+		o.Status = "open"
 	}
 }
 
@@ -776,6 +831,7 @@ func DefaultSettings(now time.Time) Settings {
 		OlderTeamsAvoidEarly: true,
 		LegendEnabled:        true,
 		Theme:                AuroraTheme(),
+		ZoneName:             "Aurora",
 	}
 	s.Normalize()
 	return s

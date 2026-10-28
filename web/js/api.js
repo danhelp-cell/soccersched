@@ -72,5 +72,20 @@ const API = {
   saveExportProfile(row) { return row.id ? this.req("PUT", "/api/export-profiles/" + encodeURIComponent(row.id), row) : this.req("POST", "/api/export-profiles", row); },
   deleteExportProfile(id) { return this.req("DELETE", "/api/export-profiles/" + encodeURIComponent(id)); },
   restore(data) { return this.req("POST", "/api/backup", data); },
+  async upload(path, body) {
+    const res = await fetch(path, { method: "POST", headers: { "X-Pitchboard": "1" }, body });
+    const text = await res.text();
+    let data = null;
+    if (text) { try { data = JSON.parse(text); } catch { data = { error: text }; } }
+    if (!res.ok) {
+      const err = new Error(data?.error || res.statusText);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  },
+  bookOpening(id, body) { return this.req("POST", "/api/openings/" + encodeURIComponent(id) + "/book", body); },
+  deleteOpening(id) { return this.req("DELETE", "/api/openings/" + encodeURIComponent(id)); },
   shutdown() { return this.req("POST", "/api/shutdown", {}); },
 };

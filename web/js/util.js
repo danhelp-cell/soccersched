@@ -17,7 +17,7 @@ const PB = {
     formMode: null,
     dirty: false,
     hiddenTeams: new Set(),
-    filters: { text: "", env: "", surfaces: new Set(), types: new Set(), lateOnly: false, hideCancelled: true },
+    filters: { text: "", env: "", surface: "", type: "", lateOnly: false, hideCancelled: true },
     dataDir: "",
     version: "",
     undo: [],

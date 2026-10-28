@@ -80,6 +80,10 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/blackouts", a.createBlackout)
 	mux.HandleFunc("PUT /api/blackouts/{id}", a.updateBlackout)
 	mux.HandleFunc("DELETE /api/blackouts/{id}", a.deleteBlackout)
+	mux.HandleFunc("POST /api/import/preview", a.importPreview)
+	mux.HandleFunc("POST /api/import", a.importSheet)
+	mux.HandleFunc("POST /api/openings/{id}/book", a.bookOpening)
+	mux.HandleFunc("DELETE /api/openings/{id}", a.deleteOpening)
 	mux.HandleFunc("GET /api/export/csv", a.exportCSV)
 	mux.HandleFunc("GET /api/export/xlsx", a.exportXLSX)
 	mux.HandleFunc("GET /api/export/pdf", a.exportPDF)
@@ -415,8 +419,9 @@ func (a *App) checkEvent(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) listEvents(w http.ResponseWriter, r *http.Request) {
 	db := a.store.View()
-	rows := export.Select(&db, a.query(r))
-	a.writeJSON(w, 200, map[string]any{"events": rows})
+	q := a.query(r)
+	rows := export.Select(&db, q)
+	a.writeJSON(w, 200, map[string]any{"events": rows, "openings": openingsIn(&db, q)})
 }
 
 func (a *App) summary(w http.ResponseWriter, r *http.Request) {

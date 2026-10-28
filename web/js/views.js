@@ -11,6 +11,7 @@ function renderTop() {
       <strong style="margin-left:8px">${esc(PB.state.viewTitle || "")}</strong>`;
     actions.innerHTML = `
       <div class="seg">${views.map(([id, label]) => `<button type="button" data-cal="${id}" class="${PB.state.activeCalView === id ? "is-active" : ""}">${label}</button>`).join("")}</div>
+      <button type="button" class="btn-line" id="import-open">Import</button>
       <button type="button" class="btn-line" id="export-open">Export</button>
       <button type="button" class="btn" id="new-event">New</button>`;
     document.getElementById("cal-prev").onclick = () => PB.state.calendar?.prev();
@@ -22,8 +23,9 @@ function renderTop() {
   } else {
     const titles = { plan: "Plan the week", teams: "Teams", places: "Places and pitches", settings: "Settings" };
     center.innerHTML = `<strong>${esc(titles[PB.state.view] || "")}</strong>`;
-    actions.innerHTML = `<button type="button" class="btn-line" id="export-open">Export</button>`;
+    actions.innerHTML = `<button type="button" class="btn-line" id="import-open">Import</button><button type="button" class="btn-line" id="export-open">Export</button>`;
   }
+  document.getElementById("import-open").onclick = openImport;
   document.getElementById("export-open").onclick = openExport;
   const newer = document.getElementById("new-event");
   if (newer) newer.onclick = () => {
@@ -44,7 +46,7 @@ function renderLegend() {
   const host = document.getElementById("legend");
   if (!settings?.legendEnabled) { host.textContent = ""; return; }
   const early = `${clockLabel(settings.earlyWindowStart, settings.timeFormat)}–${clockLabel(settings.earlyWindowEnd, settings.timeFormat)}`;
-  host.innerHTML = `Bright hours (${esc(early)}) are booked first for players under ${esc(settings.priorityCutoffAge)}. An age group can set its own hours, such as Academy evenings. A dashed outline means a priority team starts after its window.`;
+  host.innerHTML = `Bright hours (${esc(early)}) are booked first for players under ${esc(settings.priorityCutoffAge)}. An age group can set its own hours, such as Academy evenings. A dashed outline means a priority team starts after its window. A dashed open block is a time from an imported timetable.`;
 }
 
 function ensureSidebar() {
@@ -145,26 +147,24 @@ function renderFilters() {
   if (!host) return;
   const filters = PB.state.filters;
   host.innerHTML = `
-    <div class="checks">
-      ${[["", "All"], ["indoor", "Indoor"], ["outdoor", "Outdoor"]].map(([id, label]) => `<label><input type="radio" name="env" value="${id}" ${filters.env === id ? "checked" : ""}/> ${label}</label>`).join("")}
-    </div>
-    <div class="checks" style="margin-top:8px">
-      ${PB.state.surfaces.map((surface) => `<label><input type="checkbox" data-surface="${esc(surface.id)}" ${filters.surfaces.has(surface.id) ? "checked" : ""}/> ${esc(surface.name)}</label>`).join("")}
-    </div>
-    <div class="checks" style="margin-top:8px">
-      ${PB.state.eventTypes.map((type) => `<label><input type="checkbox" data-type="${esc(type.id)}" ${filters.types.has(type.id) ? "checked" : ""}/> ${esc(type.name)}</label>`).join("")}
-    </div>
+    <label class="field"><span>Place</span><select id="filter-env">
+      <option value="">All places</option>
+      <option value="indoor" ${filters.env === "indoor" ? "selected" : ""}>Indoor</option>
+      <option value="outdoor" ${filters.env === "outdoor" ? "selected" : ""}>Outdoor</option>
+    </select></label>
+    <label class="field"><span>Surface</span><select id="filter-surface">
+      <option value="">Any surface</option>
+      ${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${filters.surface === surface.id ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}
+    </select></label>
+    <label class="field"><span>Kind</span><select id="filter-type">
+      <option value="">Anything</option>
+      ${PB.state.eventTypes.map((type) => `<option value="${esc(type.id)}" ${filters.type === type.id ? "selected" : ""}>${esc(type.name)}</option>`).join("")}
+    </select></label>
     <label style="display:block;margin-top:8px"><input type="checkbox" id="late-only" ${filters.lateOnly ? "checked" : ""}/> Early-hour issues only</label>
     <label style="display:block;margin-top:4px"><input type="checkbox" id="hide-cancelled" ${filters.hideCancelled ? "checked" : ""}/> Hide cancelled</label>`;
-  host.querySelectorAll("[name=env]").forEach((input) => input.onchange = () => { filters.env = input.value; PB.state.calendar.refetchEvents(); });
-  host.querySelectorAll("[data-surface]").forEach((input) => input.onchange = () => {
-    if (input.checked) filters.surfaces.add(input.dataset.surface); else filters.surfaces.delete(input.dataset.surface);
-    PB.state.calendar.refetchEvents();
-  });
-  host.querySelectorAll("[data-type]").forEach((input) => input.onchange = () => {
-    if (input.checked) filters.types.add(input.dataset.type); else filters.types.delete(input.dataset.type);
-    PB.state.calendar.refetchEvents();
-  });
+  host.querySelector("#filter-env").onchange = (event) => { filters.env = event.target.value; PB.state.calendar.refetchEvents(); };
+  host.querySelector("#filter-surface").onchange = (event) => { filters.surface = event.target.value; PB.state.calendar.refetchEvents(); };
+  host.querySelector("#filter-type").onchange = (event) => { filters.type = event.target.value; PB.state.calendar.refetchEvents(); };
   host.querySelector("#late-only").onchange = (event) => { filters.lateOnly = event.target.checked; PB.state.calendar.refetchEvents(); };
   host.querySelector("#hide-cancelled").onchange = (event) => { filters.hideCancelled = event.target.checked; PB.state.calendar.refetchEvents(); };
 }
@@ -172,36 +172,47 @@ function renderFilters() {
 function renderInspector() {
   const host = document.getElementById("inspector");
   if (!host || PB.state.view !== "calendar") return;
+  if (PB.state.formMode === "opening" && PB.state.opening) {
+    renderOpening(host, PB.state.opening);
+    return;
+  }
   const form = PB.state.form;
   if (!form) {
     const late = (PB.state.events || []).filter((event) => event.latePriority).length;
-    host.innerHTML = `<div class="side-block"><h2>Details</h2><p class="muted">Drag a team onto the calendar, or drag across an empty hour to book it.</p>${late ? `<p><span class="badge late">${late} early-hour issue${late === 1 ? "" : "s"}</span></p><button type="button" class="btn-ghost" id="goto-plan">Review them</button>` : ""}</div>`;
+    host.innerHTML = `<div class="side-block"><h2>Details</h2><p class="muted">Drag a team onto the calendar, drag across an empty hour, or import a timetable.</p>${late ? `<p><span class="badge late">${late} early-hour issue${late === 1 ? "" : "s"}</span></p><button type="button" class="btn-ghost" id="goto-plan">Review them</button>` : ""}</div>`;
     const jump = host.querySelector("#goto-plan");
     if (jump) jump.onclick = () => setView("plan");
     return;
   }
   const type = typeById(form.eventTypeId);
   const category = type?.category || "practice";
-  const pitches = PB.state.pitches.filter((pitch) => !form.venueId || pitch.venueId === form.venueId);
-  const late = isLateForm(form);
+  const primary = (form.teamIds || [])[0] || "";
+  const second = (form.teamIds || [])[1] || "";
+  const placeLine = placeSummary(form);
   host.innerHTML = `<form class="side-block" id="event-form">
     <h2>${PB.state.formMode === "create" ? "New booking" : "Booking"}</h2>
     <p class="muted" id="when-label"></p>
     <div id="issue-box"></div>
-    <label class="field"><span>Title</span><input name="title" type="text" value="${esc(form.title)}" placeholder="Filled in from the team if left blank" /></label>
-    <label class="field"><span>Type</span><select name="eventTypeId">${PB.state.eventTypes.map((item) => `<option value="${esc(item.id)}" ${item.id === form.eventTypeId ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label>
-    <div class="field"><span>Teams</span><div class="checks">${PB.state.teams.filter((team) => team.active !== false).map((team) => `<label><input type="checkbox" name="team" value="${esc(team.id)}" ${(form.teamIds || []).includes(team.id) ? "checked" : ""}/> ${esc(team.shortName || team.name)}</label>`).join("")}</div></div>
+    <label class="field"><span>Team</span><select name="team">${teamChoices(primary, "Choose a team")}</select></label>
+    ${second || PB.state.showSecondTeam ? `<label class="field"><span>Also</span><select name="team2">${teamChoices(second, "No other team")}</select></label>` : `<button type="button" class="btn-ghost" id="add-team">Add another team</button>`}
+    <label class="field"><span>What</span><select name="eventTypeId">${PB.state.eventTypes.map((item) => `<option value="${esc(item.id)}" ${item.id === form.eventTypeId ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label>
     ${category === "game" ? `<label class="field"><span>Home or away</span><select name="homeAway"><option value="home" ${form.homeAway !== "away" ? "selected" : ""}>Home</option><option value="away" ${form.homeAway === "away" ? "selected" : ""}>Away</option></select></label>
-      <label class="field"><span>Opponent</span><input name="opponent" type="text" value="${esc(form.opponent)}" /></label>` : ""}
-    <div id="place-fields"></div>
-    <label class="field"><span><input type="checkbox" name="allDay" ${form.allDay ? "checked" : ""}/> All day</span></label>
+      <label class="field"><span>Opponent</span><input name="opponent" type="text" value="${esc(form.opponent)}" /></label>` : `<input type="hidden" name="homeAway" value="${esc(form.homeAway || "home")}" />`}
+    ${form.homeAway === "away" && category === "game"
+      ? `<label class="field"><span>Where</span><input name="awayLocation" type="text" value="${esc(form.awayLocation)}" placeholder="Opponent's field" /></label>`
+      : `<label class="field"><span>Place</span><select name="pitchId">${placeChoices(form.pitchId)}</select></label>${placeLine ? `<p class="muted">${esc(placeLine)}</p>` : ""}`}
     <label class="field"><span>Starts</span><input name="start" type="${form.allDay ? "date" : "datetime-local"}" value="${form.allDay ? ymd(form.start) : stampInput(form.start)}" /></label>
     <label class="field"><span>Ends</span><input name="end" type="${form.allDay ? "date" : "datetime-local"}" value="${form.allDay ? ymd(new Date(parseLocal(form.end).getTime() - 86400000)) : stampInput(form.end)}" /></label>
-    <label class="field"><span>Status</span><select name="status">${["scheduled", "tentative", "cancelled"].map((status) => `<option ${form.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
-    <label class="field"><span>Notes</span><textarea name="notes">${esc(form.notes)}</textarea></label>
-    ${PB.state.formMode === "create" ? `<label class="field"><span>Repeat</span><select name="repeat"><option value="none">Does not repeat</option><option value="weekly" ${form.repeat === "weekly" ? "selected" : ""}>Weekly</option><option value="daily" ${form.repeat === "daily" ? "selected" : ""}>Daily</option></select></label>
-      <div class="row"><label class="field"><span>Until</span><input name="repeatUntil" type="date" value="${esc(form.repeatUntil || "")}" /></label><label class="field"><span>Or count</span><input name="repeatCount" type="number" min="1" max="60" value="${esc(form.repeatCount || 8)}" /></label></div>` : ""}
-    ${form.seriesId ? `<label class="field"><span>Repeating set</span><select name="applyTo"><option value="single">Change this date only</option><option value="series" ${form.applyTo === "series" ? "selected" : ""}>Shift the whole set</option></select></label>` : ""}
+    <button type="button" class="btn-ghost" id="more-toggle">${PB.state.showMore ? "Hide extra fields" : "More"}</button>
+    <div id="more-fields" ${PB.state.showMore ? "" : "hidden"}>
+      <label class="field"><span>Title</span><input name="title" type="text" value="${esc(form.title)}" placeholder="Filled in from the team if left blank" /></label>
+      <label class="field"><span><input type="checkbox" name="allDay" ${form.allDay ? "checked" : ""}/> All day</span></label>
+      <label class="field"><span>Status</span><select name="status">${["scheduled", "tentative", "cancelled"].map((status) => `<option ${form.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+      <label class="field"><span>Notes</span><textarea name="notes">${esc(form.notes)}</textarea></label>
+      ${PB.state.formMode === "create" ? `<label class="field"><span>Repeat</span><select name="repeat"><option value="none">Does not repeat</option><option value="weekly" ${form.repeat === "weekly" ? "selected" : ""}>Weekly</option><option value="daily" ${form.repeat === "daily" ? "selected" : ""}>Daily</option></select></label>
+        <div class="row"><label class="field"><span>Until</span><input name="repeatUntil" type="date" value="${esc(form.repeatUntil || "")}" /></label><label class="field"><span>Or count</span><input name="repeatCount" type="number" min="1" max="60" value="${esc(form.repeatCount || 8)}" /></label></div>` : ""}
+      ${form.seriesId ? `<label class="field"><span>Repeating set</span><select name="applyTo"><option value="single">Change this date only</option><option value="series" ${form.applyTo === "series" ? "selected" : ""}>Shift the whole set</option></select></label>` : ""}
+    </div>
     <div id="late-box"></div>
     <div id="earlier-box"></div>
     <div class="row">
@@ -209,41 +220,112 @@ function renderInspector() {
       ${PB.state.formMode === "edit" ? `<button type="button" class="btn-ghost" id="delete-event">Delete</button>` : `<button type="button" class="btn-ghost" id="cancel-draft">Cancel</button>`}
     </div>
   </form>`;
-  renderPlaceFields();
   renderLateBox();
   host.querySelector("#when-label").textContent = formatRange(form.start, form.end, form.allDay);
   host.querySelector("#event-form").onsubmit = saveForm;
   host.querySelector("#event-form").onchange = onFormChange;
   host.querySelector("#event-form").oninput = () => { PB.state.dirty = true; };
+  const more = host.querySelector("#more-toggle");
+  if (more) more.onclick = () => { PB.state.showMore = !PB.state.showMore; renderInspector(); };
+  const addTeam = host.querySelector("#add-team");
+  if (addTeam) addTeam.onclick = () => { PB.state.showSecondTeam = true; renderInspector(); };
   const cancel = host.querySelector("#cancel-draft");
-  if (cancel) cancel.onclick = () => { PB.state.form = null; PB.state.selectedId = null; renderInspector(); };
+  if (cancel) cancel.onclick = () => { PB.state.form = null; PB.state.selectedId = null; PB.state.showSecondTeam = false; renderInspector(); };
   const remove = host.querySelector("#delete-event");
   if (remove) remove.onclick = deleteCurrent;
 }
 
-function renderPlaceFields() {
-  const form = PB.state.form;
-  const host = document.querySelector("#place-fields");
-  if (!host || !form) return;
-  const away = form.homeAway === "away";
-  const pitches = PB.state.pitches.filter((pitch) => pitch.active !== false && (!form.venueId || pitch.venueId === form.venueId));
-  host.innerHTML = away
-    ? `<label class="field"><span>Away location</span><input name="awayLocation" type="text" value="${esc(form.awayLocation)}" placeholder="Opponent's field" /></label>`
-    : `<label class="field"><span>Location</span><select name="venueId"><option value="">Choose</option>${PB.state.venues.filter((venue) => venue.active !== false).map((venue) => `<option value="${esc(venue.id)}" ${venue.id === form.venueId ? "selected" : ""}>${esc(venue.name)}</option>`).join("")}</select></label>
-      <label class="field"><span>Pitch</span><select name="pitchId"><option value="">Choose</option>${pitches.map((pitch) => `<option value="${esc(pitch.id)}" ${pitch.id === form.pitchId ? "selected" : ""}>${esc(pitch.name)}</option>`).join("")}</select></label>
-      <div class="row">
-        <label class="field"><span>Indoor or outdoor</span><select name="environment"><option value="indoor" ${form.environment === "indoor" ? "selected" : ""}>Indoor</option><option value="outdoor" ${form.environment === "outdoor" ? "selected" : ""}>Outdoor</option></select></label>
-        <label class="field"><span>Surface</span><select name="surfaceId">${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${surface.id === form.surfaceId ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}</select></label>
-      </div>
-      <label class="field"><span>Pitch type</span><select name="formatId">${PB.state.formats.map((format) => `<option value="${esc(format.id)}" ${format.id === form.formatId ? "selected" : ""}>${esc(format.name)}</option>`).join("")}</select></label>
-      <p class="muted" id="place-readout"></p>`;
-  const readout = host.querySelector("#place-readout");
-  if (readout) {
-    const surface = byId(PB.state.surfaces, form.surfaceId);
-    const format = byId(PB.state.formats, form.formatId);
-    const venue = venueById(form.venueId);
-    const pitch = pitchById(form.pitchId);
-    readout.textContent = [form.environment === "indoor" ? "Indoor" : form.environment === "outdoor" ? "Outdoor" : "", surface?.name, format?.name, venue?.name, pitch?.name].filter(Boolean).join(" · ");
+function teamChoices(selected, blank) {
+  const teams = PB.state.teams.filter((team) => team.active !== false);
+  return `<option value="">${esc(blank)}</option>` + teams.map((team) => `<option value="${esc(team.id)}" ${team.id === selected ? "selected" : ""}>${esc(team.name)}</option>`).join("");
+}
+
+function placeChoices(selected) {
+  const pitches = PB.state.pitches.filter((pitch) => pitch.active !== false);
+  return `<option value="">Choose a place</option>` + pitches.map((pitch) => {
+    const venue = venueById(pitch.venueId);
+    return `<option value="${esc(pitch.id)}" ${pitch.id === selected ? "selected" : ""}>${esc((venue?.name || "Place") + " — " + pitch.name)}</option>`;
+  }).join("");
+}
+
+function placeSummary(form) {
+  const pitch = pitchById(form.pitchId);
+  if (!pitch) return "";
+  const surface = byId(PB.state.surfaces, pitch.surfaceId);
+  const format = byId(PB.state.formats, pitch.formatId);
+  const where = pitch.environment === "indoor" ? "Indoor" : pitch.environment === "outdoor" ? "Outdoor" : "";
+  return [where, surface?.name, format?.name].filter(Boolean).join(" · ");
+}
+
+function renderOpening(host, opening) {
+  const use = opening.use === "game" || opening.use === "practice" ? opening.use : "practice";
+  const title = opening.kind === "swap" ? "Swap a time" : "Open time";
+  const who = opening.kind === "swap"
+    ? `Held by ${opening.holder || opening.zone || "another Saskatoon Youth Soccer zone"}.`
+    : "Free on the imported timetable.";
+  host.innerHTML = `<form class="side-block" id="opening-form">
+    <h2>${esc(title)}</h2>
+    <p class="muted">${esc(formatRange(opening.start, opening.end, false))}</p>
+    <p>${esc(who)} ${esc(opening.place || "")}</p>
+    ${opening.notes ? `<p class="muted">${esc(opening.notes)}</p>` : ""}
+    <div id="issue-box"></div>
+    <label class="field"><span>Team</span><select name="team">${teamChoices(opening.teamId || "", "Choose a team")}</select></label>
+    <label class="field"><span>Use</span><select name="use">
+      <option value="practice" ${use !== "game" ? "selected" : ""}>Practice</option>
+      <option value="game" ${use === "game" ? "selected" : ""}>Game</option>
+    </select></label>
+    <label class="field"><span>Place</span><select name="pitchId">${placeChoices(opening.pitchId || "")}</select></label>
+    <div id="opening-game" ${use === "game" ? "" : "hidden"}>
+      <label class="field"><span>Home or away</span><select name="homeAway"><option value="home">Home</option><option value="away">Away</option></select></label>
+      <label class="field"><span>Opponent</span><input name="opponent" type="text" value="${esc(opening.holder || "")}" /></label>
+    </div>
+    <div class="row">
+      <button type="submit" class="btn">Book this time</button>
+      <button type="button" class="btn-ghost" id="drop-opening">Remove</button>
+    </div>
+    <button type="button" class="btn-ghost" id="close-opening">Leave it</button>
+  </form>`;
+  host.querySelector("[name=use]").onchange = (event) => {
+    host.querySelector("#opening-game").hidden = event.target.value !== "game";
+  };
+  host.querySelector("#opening-form").onsubmit = bookOpening;
+  host.querySelector("#close-opening").onclick = () => { PB.state.opening = null; PB.state.formMode = "create"; PB.state.selectedId = null; renderInspector(); };
+  host.querySelector("#drop-opening").onclick = async () => {
+    try {
+      await API.deleteOpening(opening.id);
+      PB.state.opening = null;
+      PB.state.selectedId = null;
+      PB.state.formMode = "create";
+      PB.state.calendar?.refetchEvents();
+      renderInspector();
+      toast("Removed from the timetable.");
+    } catch (err) { toast(errorText(err)); }
+  };
+}
+
+async function bookOpening(event) {
+  event.preventDefault();
+  const opening = PB.state.opening;
+  const data = new FormData(event.target);
+  try {
+    const saved = await API.bookOpening(opening.id, {
+      teamId: data.get("team") || "",
+      use: data.get("use") || "practice",
+      pitchId: data.get("pitchId") || "",
+      homeAway: data.get("homeAway") || "home",
+      opponent: data.get("opponent") || "",
+    });
+    PB.state.opening = null;
+    PB.state.form = null;
+    PB.state.selectedId = saved.events?.[0]?.id || null;
+    PB.state.formMode = PB.state.selectedId ? "edit" : "create";
+    if (saved.issues?.some((issue) => issue.level === "warning")) toast(saved.issues.find((issue) => issue.level === "warning").message);
+    toast("Booked.");
+    PB.state.calendar?.refetchEvents();
+    renderInspector();
+  } catch (err) {
+    showIssues(err.data?.issues || [{ level: "error", message: errorText(err) }]);
+    toast(errorText(err));
   }
 }
 
@@ -271,15 +353,16 @@ function readForm(formEl) {
   const data = new FormData(formEl);
   form.title = data.get("title") || "";
   form.eventTypeId = data.get("eventTypeId") || form.eventTypeId;
-  form.teamIds = [...formEl.querySelectorAll("[name=team]:checked")].map((box) => box.value);
+  form.teamIds = [data.get("team"), data.get("team2")].map((id) => id || "").filter((id, index, all) => id && all.indexOf(id) === index);
   form.homeAway = data.get("homeAway") || form.homeAway || "home";
   form.opponent = data.get("opponent") || "";
   form.awayLocation = data.get("awayLocation") || "";
-  form.venueId = data.get("venueId") ?? form.venueId;
-  form.pitchId = data.get("pitchId") ?? form.pitchId;
-  form.environment = data.get("environment") || form.environment;
-  form.surfaceId = data.get("surfaceId") || form.surfaceId;
-  form.formatId = data.get("formatId") || form.formatId;
+  if (form.homeAway === "away") {
+    form.pitchId = "";
+    form.venueId = "";
+  } else if (data.has("pitchId")) {
+    form.pitchId = data.get("pitchId") || "";
+  }
   form.status = data.get("status") || "scheduled";
   form.notes = data.get("notes") || "";
   const wasAllDay = form.allDay;
@@ -315,26 +398,23 @@ function onFormChange(event) {
   const previousVenue = PB.state.form.venueId;
   const previousAllDay = PB.state.form.allDay;
   readForm(formEl);
+  if (event.target.name === "homeAway" && PB.state.form.homeAway === "away") {
+    PB.state.form.pitchId = "";
+    PB.state.form.venueId = "";
+  }
   if (event.target.name === "pitchId" && PB.state.form.pitchId && PB.state.form.pitchId !== previousPitch) {
     const pitch = pitchById(PB.state.form.pitchId);
     if (pitch) applyPitch(PB.state.form, pitch);
   }
-  if (event.target.name === "venueId" && PB.state.form.venueId !== previousVenue) {
-    const pitch = pitchById(PB.state.form.pitchId);
-    if (!pitch || pitch.venueId !== PB.state.form.venueId) PB.state.form.pitchId = "";
-  }
-  if (event.target.name === "surfaceId") {
-    const surface = byId(PB.state.surfaces, PB.state.form.surfaceId);
-    if (surface && surface.environment !== "either") PB.state.form.environment = surface.environment;
+  if (!PB.state.form.pitchId) {
+    PB.state.form.venueId = "";
   }
   PB.state.dirty = true;
-  if (["allDay", "eventTypeId", "homeAway", "venueId", "pitchId", "surfaceId", "start", "end"].includes(event.target.name) || previousAllDay !== PB.state.form.allDay) {
+  if (["allDay", "eventTypeId", "homeAway", "pitchId", "team", "team2", "start", "end"].includes(event.target.name) || previousAllDay !== PB.state.form.allDay || previousVenue !== PB.state.form.venueId) {
     renderInspector();
     return;
   }
   renderLateBox();
-  const readout = document.getElementById("place-readout");
-  if (readout) renderPlaceFields();
 }
 
 async function saveForm(event) {
@@ -721,7 +801,7 @@ function renderSettings() {
       </div>
       <button type="button" class="btn-ghost" id="aurora-theme">Use Aurora colours</button>
       <h2>Club</h2>
-      <div class="row"><label class="field"><span>Name</span><input name="clubName" value="${esc(settings.clubName)}" /></label><label class="field"><span>Season</span><input name="seasonName" value="${esc(settings.seasonName)}" /></label></div>
+      <div class="row"><label class="field"><span>Name</span><input name="clubName" value="${esc(settings.clubName)}" /></label><label class="field"><span>Season</span><input name="seasonName" value="${esc(settings.seasonName)}" /></label><label class="field"><span>Our zone</span><select name="zoneName">${zoneOptions(settings.zoneName)}</select></label></div>
       <div class="row"><label class="field"><span>Starts</span><input type="date" name="seasonStart" value="${esc(settings.seasonStart)}" /></label><label class="field"><span>Ends</span><input type="date" name="seasonEnd" value="${esc(settings.seasonEnd)}" /></label><label class="field"><span>Time label</span><input name="timezoneLabel" value="${esc(settings.timezoneLabel)}" /></label></div>
       <h2>Calendar</h2>
       <div class="row">
@@ -802,6 +882,7 @@ async function saveSettingsForm(event) {
   const next = {
     ...PB.state.settings,
     clubName: data.get("clubName"),
+    zoneName: data.get("zoneName") || "Aurora",
     seasonName: data.get("seasonName"),
     seasonStart: data.get("seasonStart"),
     seasonEnd: data.get("seasonEnd"),
@@ -968,6 +1049,93 @@ function wireRows(host, find, save, remove, redraw) {
       try { adopt(await remove(row.dataset.id)); redraw(); } catch (err) { toast(errorText(err)); }
     };
   });
+}
+
+function zoneOptions(current) {
+  const zones = ["Aurora", "SUSC", "Hollandia", "Lakewood", "Eastside"];
+  if (current && !zones.includes(current)) zones.push(current);
+  return zones.map((zone) => `<option ${(!current && zone === "Aurora") || current === zone ? "selected" : ""}>${esc(zone)}</option>`).join("");
+}
+
+function openImport() {
+  const root = document.getElementById("modal-root");
+  const week = PB.state.rangeStart ? ymd(PB.state.rangeStart) : (PB.state.settings?.seasonStart || ymd(new Date()));
+  root.innerHTML = `<div class="modal-back"><form class="modal wide" id="import-form">
+    <h2>Import a spreadsheet</h2>
+    <p class="muted">CSV or Excel. A Saskatoon Youth Soccer master timetable can include practice times, games, and matches held by SUSC, Hollandia, Lakewood, or Eastside that this club might swap.</p>
+    <label class="field"><span>File</span><input name="file" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></label>
+    <div class="row">
+      <label class="field"><span>This file is</span><select name="source">
+        <option>Saskatoon Youth Soccer</option>
+        <option>This club</option>
+        <option>Another spreadsheet</option>
+      </select></label>
+      <label class="field"><span>Week of</span><input name="weekOf" type="date" value="${esc(week)}" /></label>
+    </div>
+    <p class="muted">Use Week of when a column says Monday instead of a date. The first row should name the columns. Date, start, end, field, type, zone, home, and away are recognized.</p>
+    <div id="import-map" class="map-grid"></div>
+    <div id="import-preview"></div>
+    <div class="row">
+      <button class="btn" type="submit" name="step" value="read">Read the file</button>
+      <button class="btn" type="submit" name="step" value="add" id="import-add" disabled>Add to the calendar</button>
+      <button class="btn-ghost" type="button" id="import-close">Close</button>
+    </div>
+  </form></div>`;
+  const form = root.querySelector("#import-form");
+  let mapping = {};
+  const close = () => { root.innerHTML = ""; };
+  root.querySelector(".modal-back").onclick = (event) => { if (event.target === event.currentTarget) close(); };
+  root.querySelector("#import-close").onclick = close;
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const file = form.querySelector("[name=file]").files[0];
+    if (!file) { toast("Choose a CSV or Excel file."); return; }
+    const body = new FormData();
+    body.append("file", file);
+    body.append("source", form.querySelector("[name=source]").value);
+    body.append("weekOf", form.querySelector("[name=weekOf]").value);
+    body.append("mapping", JSON.stringify(mapping));
+    const adding = event.submitter?.value === "add";
+    try {
+      const res = await API.upload(adding ? "/api/import" : "/api/import/preview", body);
+      if (!adding) {
+        mapping = res.mapping || {};
+        drawImportMap(res, (next) => { mapping = next; form.requestSubmit(form.querySelector("[name=step][value=read]")); });
+        drawImportPreview(res);
+        form.querySelector("#import-add").disabled = false;
+        return;
+      }
+      const added = (res.bookings || 0) + (res.open || 0) + (res.swaps || 0);
+      const word = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+      toast(added ? `Added ${word(res.bookings || 0, "booking", "bookings")}, ${word(res.open || 0, "open time", "open times")}, and ${word(res.swaps || 0, "swap", "swaps")}.` : "Nothing new was added.");
+      close();
+      PB.state.calendar?.refetchEvents();
+      renderInspector();
+    } catch (err) { toast(errorText(err)); }
+  };
+}
+
+function drawImportMap(res, onChange) {
+  const host = document.getElementById("import-map");
+  if (!host) return;
+  host.innerHTML = (res.headers || []).map((header) => `<label class="field"><span>${esc(header)}</span><select data-col="${esc(header)}">${(res.fields || []).map((field) => `<option value="${esc(field.id)}" ${(res.mapping || {})[header] === field.id ? "selected" : ""}>${esc(field.label)}</option>`).join("")}</select></label>`).join("");
+  host.querySelectorAll("select").forEach((select) => {
+    select.onchange = () => {
+      const next = { ...(res.mapping || {}) };
+      host.querySelectorAll("select").forEach((item) => { next[item.dataset.col] = item.value; });
+      onChange(next);
+    };
+  });
+}
+
+function drawImportPreview(res) {
+  const host = document.getElementById("import-preview");
+  if (!host) return;
+  const rows = res.rows || [];
+  const head = `<p><strong>${res.bookings || 0} bookings · ${res.open || 0} open times · ${res.swaps || 0} swaps · ${res.skipped || 0} skipped</strong></p>`;
+  const lines = rows.slice(0, 8).map((row) => `<div>${esc(row.summary || row.kind)}</div>`).join("");
+  const more = rows.length > 8 ? `<p class="muted">${rows.length - 8} more rows</p>` : "";
+  host.innerHTML = head + `<div class="preview-list">${lines}</div>` + more;
 }
 
 function openExport() {

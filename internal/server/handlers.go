@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pitchboard/internal/export"
+	"pitchboard/internal/intake"
 	"pitchboard/internal/model"
 	"pitchboard/internal/schedule"
 	"pitchboard/internal/store"
@@ -941,6 +942,202 @@ func (a *App) shutdown(w http.ResponseWriter, r *http.Request) {
 	if a.onShutdown != nil {
 		go a.onShutdown()
 	}
+}
+
+func (a *App) importPreview(w http.ResponseWriter, r *http.Request) {
+	name, data, opt, err := a.readSheet(w, r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	res, err := a.classifySheet(name, data, opt)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.writeJSON(w, 200, res)
+}
+
+func (a *App) importSheet(w http.ResponseWriter, r *http.Request) {
+	name, data, opt, err := a.readSheet(w, r)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	grid, err := intake.Read(name, data)
+	if err != nil {
+		a.fail(w, bad(err.Error()))
+		return
+	}
+	var res intake.Result
+	err = a.store.Update(func(db *model.Database) error {
+		var err error
+		res, err = intake.Commit(db, grid, opt)
+		if err != nil {
+			return bad(err.Error())
+		}
+		return nil
+	})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.writeJSON(w, 200, res)
+}
+
+func (a *App) bookOpening(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var choice struct {
+		TeamID   string `json:"teamId"`
+		Use      string `json:"use"`
+		PitchID  string `json:"pitchId"`
+		HomeAway string `json:"homeAway"`
+		Opponent string `json:"opponent"`
+	}
+	if err := a.readJSON(r, &choice); err != nil {
+		a.fail(w, err)
+		return
+	}
+	var saved model.EventView
+	var issues []schedule.Issue
+	err := a.store.Update(func(db *model.Database) error {
+		idx := -1
+		for i := range db.Openings {
+			if db.Openings[i].ID == id && db.Openings[i].Status != "booked" {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return missing("That open time is no longer on the calendar.")
+		}
+		ev, err := intake.EventForOpening(db, db.Openings[idx], intake.BookChoice{
+			TeamID: choice.TeamID, Use: choice.Use, PitchID: choice.PitchID,
+			HomeAway: choice.HomeAway, Opponent: choice.Opponent,
+		})
+		if err != nil {
+			return bad(err.Error())
+		}
+		res := schedule.Check(db, ev, schedule.WriteOptions{AcknowledgeLate: true})
+		issues = res.Issues
+		if !res.OK {
+			return reject(res)
+		}
+		ev, _ = schedule.Normalize(db, ev)
+		ev.ID = db.NewID("evt")
+		now := time.Now().Format(time.RFC3339)
+		ev.CreatedAt, ev.UpdatedAt = now, now
+		db.Events = append(db.Events, ev)
+		db.Openings[idx].Status = "booked"
+		db.Openings[idx].EventID = ev.ID
+		saved = db.Present(ev)
+		return nil
+	})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.writeJSON(w, 200, map[string]any{"events": []model.EventView{saved}, "issues": issues})
+}
+
+func (a *App) deleteOpening(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := a.store.Update(func(db *model.Database) error {
+		next := db.Openings[:0]
+		found := false
+		for _, op := range db.Openings {
+			if op.ID == id {
+				found = true
+				continue
+			}
+			next = append(next, op)
+		}
+		if !found {
+			return missing("That open time is no longer on the calendar.")
+		}
+		db.Openings = next
+		return nil
+	})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.writeJSON(w, 200, map[string]string{"status": "deleted"})
+}
+
+func (a *App) classifySheet(name string, data []byte, opt intake.Options) (intake.Result, error) {
+	grid, err := intake.Read(name, data)
+	if err != nil {
+		return intake.Result{}, bad(err.Error())
+	}
+	db := a.store.View()
+	res, err := intake.Classify(&db, grid, opt)
+	if err != nil {
+		return intake.Result{}, bad(err.Error())
+	}
+	return res, nil
+}
+
+func (a *App) readSheet(w http.ResponseWriter, r *http.Request) (string, []byte, intake.Options, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		return "", nil, intake.Options{}, bad("That file is too large or could not be read.")
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		return "", nil, intake.Options{}, bad("Choose a CSV or Excel file.")
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 8<<20))
+	if err != nil {
+		return "", nil, intake.Options{}, bad("That file could not be read.")
+	}
+	opt := intake.Options{Source: strings.TrimSpace(r.FormValue("source"))}
+	if opt.Source == "" {
+		opt.Source = "Saskatoon Youth Soccer"
+	}
+	if week := strings.TrimSpace(r.FormValue("weekOf")); week != "" {
+		t, err := time.ParseInLocation("2006-01-02", week, time.Local)
+		if err != nil {
+			return "", nil, intake.Options{}, bad("Choose the week those weekdays belong to.")
+		}
+		opt.WeekOf = t
+	}
+	if raw := strings.TrimSpace(r.FormValue("mapping")); raw != "" && raw != "{}" {
+		if err := json.Unmarshal([]byte(raw), &opt.Mapping); err != nil {
+			return "", nil, intake.Options{}, bad("The column choices could not be read.")
+		}
+	}
+	return header.Filename, data, opt, nil
+}
+
+func openingsIn(db *model.Database, q export.Query) []model.Opening {
+	out := []model.Opening{}
+	for _, op := range db.Openings {
+		if op.Status == "booked" {
+			continue
+		}
+		start, err1 := model.ParseFlexible(op.Start)
+		end, err2 := model.ParseFlexible(op.End)
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		if !q.Start.IsZero() && !end.After(q.Start) {
+			continue
+		}
+		if !q.End.IsZero() && !start.Before(q.End) {
+			continue
+		}
+		if pitch, ok := db.FindPitch(op.PitchID); ok {
+			op.SurfaceID = pitch.SurfaceID
+			op.Environment = pitch.Environment
+			if op.VenueID == "" {
+				op.VenueID = pitch.VenueID
+			}
+		}
+		out = append(out, op)
+	}
+	return out
 }
 
 func rangeOrSeason(db model.Database, start, end string) (time.Time, time.Time, error) {

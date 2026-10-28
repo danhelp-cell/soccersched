@@ -42,6 +42,18 @@ Each age group can hold as many teams as you need. Groups are fully editable: na
 
 A group can also set its own hours. Leave the hours blank to use the club early window. Aurora Advanced Academy in the sample uses 4:30–8:30 PM, so the planner offers those teams the evening instead of the morning. Early hours can be forced on or off for a whole group, separate from the under-11 cutoff.
 
+## Import a timetable
+
+Import reads a CSV or Excel file. Use it for a master timetable from Saskatoon Youth Soccer: times that are free for practice or games, this club’s own rows, and matches held by the other zones (SUSC, Hollandia, Lakewood, and Eastside) that a team might swap into.
+
+The first row names the columns. Date, start, end, field, type, zone, home, and away are recognized. Each column has a dropdown if a header needs to be corrected. A weekday such as Monday uses the week you pick in the import window. Rows for this club become bookings when the place matches a pitch. Other zones become dashed swap blocks. A row with no team becomes an open time. Click one, choose the team and place, and book it.
+
+Our zone defaults to Aurora. Settings → Club can switch it to SUSC, Hollandia, Lakewood, or Eastside.
+
+## Booking
+
+A new booking asks for four choices: team, what it is, place, and when. The place dropdown is the location and pitch together, and the surface and size come from that pitch. Title, status, notes, all day, and repeat sit under More. The calendar filters are three dropdowns: place, surface, and kind.
+
 ## Exports to other systems
 
 Besides CSV, Excel, PDF, and iCalendar, Export can build a file for:
