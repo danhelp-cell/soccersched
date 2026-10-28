@@ -1,0 +1,909 @@
+function renderTop() {
+  const center = document.getElementById("top-center");
+  const actions = document.getElementById("top-actions");
+  document.getElementById("club-name").textContent = PB.state.settings?.clubName || "Soccer club";
+  if (PB.state.view === "calendar") {
+    const views = [["timeGridDay", "Day"], ["timeGridWorkWeek", "Work week"], ["timeGridWeek", "Week"], ["dayGridMonth", "Month"]];
+    center.innerHTML = `
+      <button type="button" class="icon-btn" id="cal-prev" aria-label="Previous">‹</button>
+      <button type="button" class="icon-btn" id="cal-today">Today</button>
+      <button type="button" class="icon-btn" id="cal-next" aria-label="Next">›</button>
+      <strong style="margin-left:8px">${esc(PB.state.viewTitle || "")}</strong>`;
+    actions.innerHTML = `
+      <div class="seg">${views.map(([id, label]) => `<button type="button" data-cal="${id}" class="${PB.state.activeCalView === id ? "is-active" : ""}">${label}</button>`).join("")}</div>
+      <button type="button" class="btn-line" id="export-open">Export</button>
+      <button type="button" class="btn" id="new-event">New</button>`;
+    document.getElementById("cal-prev").onclick = () => PB.state.calendar?.prev();
+    document.getElementById("cal-next").onclick = () => PB.state.calendar?.next();
+    document.getElementById("cal-today").onclick = () => PB.state.calendar?.today();
+    actions.querySelectorAll("[data-cal]").forEach((button) => {
+      button.onclick = () => PB.state.calendar?.changeView(button.dataset.cal);
+    });
+  } else {
+    const titles = { plan: "Plan the week", teams: "Teams", places: "Places and pitches", settings: "Settings" };
+    center.innerHTML = `<strong>${esc(titles[PB.state.view] || "")}</strong>`;
+    actions.innerHTML = `<button type="button" class="btn-line" id="export-open">Export</button>`;
+  }
+  document.getElementById("export-open").onclick = openExport;
+  const newer = document.getElementById("new-event");
+  if (newer) newer.onclick = () => {
+    const start = roundHour(new Date());
+    startDraft(start, new Date(start.getTime() + 60 * 60000), false);
+  };
+}
+
+function roundHour(date) {
+  const next = new Date(date);
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
+  return next;
+}
+
+function renderLegend() {
+  const settings = PB.state.settings;
+  const host = document.getElementById("legend");
+  if (!settings?.legendEnabled) { host.textContent = ""; return; }
+  const early = `${clockLabel(settings.earlyWindowStart, settings.timeFormat)}–${clockLabel(settings.earlyWindowEnd, settings.timeFormat)}`;
+  host.innerHTML = `Bright hours (${esc(early)}) are booked first for players under ${esc(settings.priorityCutoffAge)}. A dashed outline means a young team starts after that.`;
+}
+
+function ensureSidebar() {
+  const el = document.getElementById("sidebar");
+  if (el.dataset.built === "1") return;
+  el.dataset.built = "1";
+  el.innerHTML = `
+    <div class="side-block" id="mini"></div>
+    <div class="side-block">
+      <label class="field"><span>Search this view</span><input id="cal-search" type="text" placeholder="Team, pitch, opponent" /></label>
+      <div class="side-label">Teams <span class="muted">drag onto a time</span></div>
+      <div id="team-list"></div>
+      <div class="side-label">Show</div>
+      <div id="filters"></div>
+    </div>`;
+  el.querySelector("#cal-search").addEventListener("input", (event) => {
+    PB.state.filters.text = event.target.value;
+    PB.state.calendar?.refetchEvents();
+  });
+  renderMini();
+  renderTeamList();
+  renderFilters();
+}
+
+function renderMini() {
+  const host = document.getElementById("mini");
+  if (!host || !PB.state.mini) return;
+  const cursor = new Date(PB.state.mini);
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const first = new Date(year, month, 1);
+  const startPad = (first.getDay() - (PB.state.settings.weekStartsOn ?? 1) + 7) % 7;
+  const days = new Date(year, month + 1, 0).getDate();
+  const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const head = [];
+  for (let i = 0; i < 7; i++) head.push(names[(i + (PB.state.settings.weekStartsOn ?? 1)) % 7]);
+  let cells = head.map((name) => `<div class="dow">${name[0]}</div>`).join("");
+  for (let i = 0; i < startPad; i++) cells += `<div></div>`;
+  const rangeStart = PB.state.rangeStart ? ymd(PB.state.rangeStart) : "";
+  const rangeEnd = PB.state.rangeEnd ? ymd(new Date(PB.state.rangeEnd.getTime() - 86400000)) : "";
+  const today = ymd(new Date());
+  for (let day = 1; day <= days; day++) {
+    const date = new Date(year, month, day);
+    const key = ymd(date);
+    const dot = (PB.state.summary || []).some((item) => item.date === key && item.late) ? " ●" : "";
+    const cls = [key >= rangeStart && key <= rangeEnd ? "in-range" : "", key === today ? "is-today" : ""].filter(Boolean).join(" ");
+    cells += `<button type="button" class="${cls}" data-day="${key}">${day}${dot ? `<span style="color:#a56b12">●</span>` : ""}</button>`;
+  }
+  host.innerHTML = `
+    <div class="row" style="align-items:center;margin-bottom:6px">
+      <button type="button" class="icon-btn" id="mini-prev">‹</button>
+      <strong style="flex:1;text-align:center">${esc(first.toLocaleDateString([], { month: "long", year: "numeric" }))}</strong>
+      <button type="button" class="icon-btn" id="mini-next">›</button>
+    </div>
+    <div class="mini">${cells}</div>`;
+  host.querySelector("#mini-prev").onclick = () => { PB.state.mini = new Date(year, month - 1, 1); renderMini(); refreshSummary(); };
+  host.querySelector("#mini-next").onclick = () => { PB.state.mini = new Date(year, month + 1, 1); renderMini(); refreshSummary(); };
+  host.querySelectorAll("[data-day]").forEach((button) => {
+    button.onclick = () => PB.state.calendar?.gotoDate(button.dataset.day);
+  });
+}
+
+function renderTeamList() {
+  const host = document.getElementById("team-list");
+  if (!host) return;
+  const groups = [...PB.state.ageGroups].sort((a, b) => a.sortOrder - b.sortOrder || a.maxAge - b.maxAge);
+  const teams = [...PB.state.teams].filter((team) => team.active !== false);
+  let html = "";
+  const buckets = groups.map((group) => ({ group, teams: teams.filter((team) => team.ageGroupId === group.id) })).filter((bucket) => bucket.teams.length);
+  const loose = teams.filter((team) => !ageById(team.ageGroupId));
+  if (loose.length) buckets.push({ group: { name: "Other" }, teams: loose });
+  for (const bucket of buckets) {
+    html += `<div class="side-label">${esc(bucket.group.name)}</div>`;
+    for (const team of bucket.teams) {
+      const hidden = PB.state.hiddenTeams.has(team.id);
+      html += `<div class="team-chip" data-id="${esc(team.id)}">
+        <input type="checkbox" ${hidden ? "" : "checked"} data-hide="${esc(team.id)}" aria-label="Show ${esc(team.name)}" />
+        <span class="swatch" style="background:${esc(team.color || "#2f6a4a")}"></span>
+        <span><span class="t-name">${esc(team.shortName || team.name)}</span><div class="t-meta">${esc(ageById(team.ageGroupId)?.name || "")}${isPriorityTeam(team) ? " · Early" : ""}</div></span>
+      </div>`;
+    }
+  }
+  if (!teams.length) html = `<p class="muted">Add a team, then drag it onto the calendar.</p>`;
+  host.innerHTML = html;
+  host.querySelectorAll("[data-hide]").forEach((box) => {
+    box.onclick = (event) => event.stopPropagation();
+    box.onchange = () => {
+      if (box.checked) PB.state.hiddenTeams.delete(box.dataset.hide);
+      else PB.state.hiddenTeams.add(box.dataset.hide);
+      PB.state.calendar?.refetchEvents();
+    };
+  });
+  bindDraggables();
+}
+
+function renderFilters() {
+  const host = document.getElementById("filters");
+  if (!host) return;
+  const filters = PB.state.filters;
+  host.innerHTML = `
+    <div class="checks">
+      ${[["", "All"], ["indoor", "Indoor"], ["outdoor", "Outdoor"]].map(([id, label]) => `<label><input type="radio" name="env" value="${id}" ${filters.env === id ? "checked" : ""}/> ${label}</label>`).join("")}
+    </div>
+    <div class="checks" style="margin-top:8px">
+      ${PB.state.surfaces.map((surface) => `<label><input type="checkbox" data-surface="${esc(surface.id)}" ${filters.surfaces.has(surface.id) ? "checked" : ""}/> ${esc(surface.name)}</label>`).join("")}
+    </div>
+    <div class="checks" style="margin-top:8px">
+      ${PB.state.eventTypes.map((type) => `<label><input type="checkbox" data-type="${esc(type.id)}" ${filters.types.has(type.id) ? "checked" : ""}/> ${esc(type.name)}</label>`).join("")}
+    </div>
+    <label style="display:block;margin-top:8px"><input type="checkbox" id="late-only" ${filters.lateOnly ? "checked" : ""}/> Early-hour issues only</label>
+    <label style="display:block;margin-top:4px"><input type="checkbox" id="hide-cancelled" ${filters.hideCancelled ? "checked" : ""}/> Hide cancelled</label>`;
+  host.querySelectorAll("[name=env]").forEach((input) => input.onchange = () => { filters.env = input.value; PB.state.calendar.refetchEvents(); });
+  host.querySelectorAll("[data-surface]").forEach((input) => input.onchange = () => {
+    if (input.checked) filters.surfaces.add(input.dataset.surface); else filters.surfaces.delete(input.dataset.surface);
+    PB.state.calendar.refetchEvents();
+  });
+  host.querySelectorAll("[data-type]").forEach((input) => input.onchange = () => {
+    if (input.checked) filters.types.add(input.dataset.type); else filters.types.delete(input.dataset.type);
+    PB.state.calendar.refetchEvents();
+  });
+  host.querySelector("#late-only").onchange = (event) => { filters.lateOnly = event.target.checked; PB.state.calendar.refetchEvents(); };
+  host.querySelector("#hide-cancelled").onchange = (event) => { filters.hideCancelled = event.target.checked; PB.state.calendar.refetchEvents(); };
+}
+
+function renderInspector() {
+  const host = document.getElementById("inspector");
+  if (!host || PB.state.view !== "calendar") return;
+  const form = PB.state.form;
+  if (!form) {
+    const late = (PB.state.events || []).filter((event) => event.latePriority).length;
+    host.innerHTML = `<div class="side-block"><h2>Details</h2><p class="muted">Drag a team onto the calendar, or drag across an empty hour to book it.</p>${late ? `<p><span class="badge late">${late} early-hour issue${late === 1 ? "" : "s"}</span></p><button type="button" class="btn-ghost" id="goto-plan">Review them</button>` : ""}</div>`;
+    const jump = host.querySelector("#goto-plan");
+    if (jump) jump.onclick = () => setView("plan");
+    return;
+  }
+  const type = typeById(form.eventTypeId);
+  const category = type?.category || "practice";
+  const pitches = PB.state.pitches.filter((pitch) => !form.venueId || pitch.venueId === form.venueId);
+  const late = isLateForm(form);
+  host.innerHTML = `<form class="side-block" id="event-form">
+    <h2>${PB.state.formMode === "create" ? "New booking" : "Booking"}</h2>
+    <p class="muted" id="when-label"></p>
+    <div id="issue-box"></div>
+    <label class="field"><span>Title</span><input name="title" type="text" value="${esc(form.title)}" placeholder="Filled in from the team if left blank" /></label>
+    <label class="field"><span>Type</span><select name="eventTypeId">${PB.state.eventTypes.map((item) => `<option value="${esc(item.id)}" ${item.id === form.eventTypeId ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label>
+    <div class="field"><span>Teams</span><div class="checks">${PB.state.teams.filter((team) => team.active !== false).map((team) => `<label><input type="checkbox" name="team" value="${esc(team.id)}" ${(form.teamIds || []).includes(team.id) ? "checked" : ""}/> ${esc(team.shortName || team.name)}</label>`).join("")}</div></div>
+    ${category === "game" ? `<label class="field"><span>Home or away</span><select name="homeAway"><option value="home" ${form.homeAway !== "away" ? "selected" : ""}>Home</option><option value="away" ${form.homeAway === "away" ? "selected" : ""}>Away</option></select></label>
+      <label class="field"><span>Opponent</span><input name="opponent" type="text" value="${esc(form.opponent)}" /></label>` : ""}
+    <div id="place-fields"></div>
+    <label class="field"><span><input type="checkbox" name="allDay" ${form.allDay ? "checked" : ""}/> All day</span></label>
+    <label class="field"><span>Starts</span><input name="start" type="${form.allDay ? "date" : "datetime-local"}" value="${form.allDay ? ymd(form.start) : stampInput(form.start)}" /></label>
+    <label class="field"><span>Ends</span><input name="end" type="${form.allDay ? "date" : "datetime-local"}" value="${form.allDay ? ymd(new Date(parseLocal(form.end).getTime() - 86400000)) : stampInput(form.end)}" /></label>
+    <label class="field"><span>Status</span><select name="status">${["scheduled", "tentative", "cancelled"].map((status) => `<option ${form.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+    <label class="field"><span>Notes</span><textarea name="notes">${esc(form.notes)}</textarea></label>
+    ${PB.state.formMode === "create" ? `<label class="field"><span>Repeat</span><select name="repeat"><option value="none">Does not repeat</option><option value="weekly" ${form.repeat === "weekly" ? "selected" : ""}>Weekly</option><option value="daily" ${form.repeat === "daily" ? "selected" : ""}>Daily</option></select></label>
+      <div class="row"><label class="field"><span>Until</span><input name="repeatUntil" type="date" value="${esc(form.repeatUntil || "")}" /></label><label class="field"><span>Or count</span><input name="repeatCount" type="number" min="1" max="60" value="${esc(form.repeatCount || 8)}" /></label></div>` : ""}
+    ${form.seriesId ? `<label class="field"><span>Repeating set</span><select name="applyTo"><option value="single">Change this date only</option><option value="series" ${form.applyTo === "series" ? "selected" : ""}>Shift the whole set</option></select></label>` : ""}
+    <div id="late-box"></div>
+    <div id="earlier-box"></div>
+    <div class="row">
+      <button type="submit" class="btn">Save</button>
+      ${PB.state.formMode === "edit" ? `<button type="button" class="btn-ghost" id="delete-event">Delete</button>` : `<button type="button" class="btn-ghost" id="cancel-draft">Cancel</button>`}
+    </div>
+  </form>`;
+  renderPlaceFields();
+  renderLateBox();
+  host.querySelector("#when-label").textContent = formatRange(form.start, form.end, form.allDay);
+  host.querySelector("#event-form").onsubmit = saveForm;
+  host.querySelector("#event-form").onchange = onFormChange;
+  host.querySelector("#event-form").oninput = () => { PB.state.dirty = true; };
+  const cancel = host.querySelector("#cancel-draft");
+  if (cancel) cancel.onclick = () => { PB.state.form = null; PB.state.selectedId = null; renderInspector(); };
+  const remove = host.querySelector("#delete-event");
+  if (remove) remove.onclick = deleteCurrent;
+}
+
+function renderPlaceFields() {
+  const form = PB.state.form;
+  const host = document.querySelector("#place-fields");
+  if (!host || !form) return;
+  const away = form.homeAway === "away";
+  const pitches = PB.state.pitches.filter((pitch) => pitch.active !== false && (!form.venueId || pitch.venueId === form.venueId));
+  host.innerHTML = away
+    ? `<label class="field"><span>Away location</span><input name="awayLocation" type="text" value="${esc(form.awayLocation)}" placeholder="Opponent's field" /></label>`
+    : `<label class="field"><span>Location</span><select name="venueId"><option value="">Choose</option>${PB.state.venues.filter((venue) => venue.active !== false).map((venue) => `<option value="${esc(venue.id)}" ${venue.id === form.venueId ? "selected" : ""}>${esc(venue.name)}</option>`).join("")}</select></label>
+      <label class="field"><span>Pitch</span><select name="pitchId"><option value="">Choose</option>${pitches.map((pitch) => `<option value="${esc(pitch.id)}" ${pitch.id === form.pitchId ? "selected" : ""}>${esc(pitch.name)}</option>`).join("")}</select></label>
+      <div class="row">
+        <label class="field"><span>Indoor or outdoor</span><select name="environment"><option value="indoor" ${form.environment === "indoor" ? "selected" : ""}>Indoor</option><option value="outdoor" ${form.environment === "outdoor" ? "selected" : ""}>Outdoor</option></select></label>
+        <label class="field"><span>Surface</span><select name="surfaceId">${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${surface.id === form.surfaceId ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}</select></label>
+      </div>
+      <label class="field"><span>Pitch type</span><select name="formatId">${PB.state.formats.map((format) => `<option value="${esc(format.id)}" ${format.id === form.formatId ? "selected" : ""}>${esc(format.name)}</option>`).join("")}</select></label>
+      <p class="muted" id="place-readout"></p>`;
+  const readout = host.querySelector("#place-readout");
+  if (readout) {
+    const surface = byId(PB.state.surfaces, form.surfaceId);
+    const format = byId(PB.state.formats, form.formatId);
+    const venue = venueById(form.venueId);
+    const pitch = pitchById(form.pitchId);
+    readout.textContent = [form.environment === "indoor" ? "Indoor" : form.environment === "outdoor" ? "Outdoor" : "", surface?.name, format?.name, venue?.name, pitch?.name].filter(Boolean).join(" · ");
+  }
+}
+
+function renderLateBox() {
+  const form = PB.state.form;
+  const host = document.querySelector("#late-box");
+  if (!host || !form) return;
+  if (!isLateForm(form)) { host.innerHTML = ""; return; }
+  const end = clockLabel(PB.state.settings.earlyWindowEnd, PB.state.settings.timeFormat);
+  host.innerHTML = `<div class="issue">This starts after ${esc(end)}. Players under ${esc(PB.state.settings.priorityCutoffAge)} are supposed to have the earlier hours.${PB.state.settings.priorityMode === "strict" ? `<label style="display:block;margin-top:6px"><input type="checkbox" name="acknowledgeLate" ${form.acknowledgeLate ? "checked" : ""}/> Schedule this later anyway</label>` : ""}</div><button type="button" class="btn-ghost" id="find-earlier">Find an earlier time</button>`;
+  const button = host.querySelector("#find-earlier");
+  if (button) button.onclick = findEarlier;
+}
+
+function showIssues(issues) {
+  const host = document.querySelector("#issue-box");
+  if (!host) return;
+  host.innerHTML = (issues || []).map((issue) => `<div class="issue ${issue.level === "error" ? "error" : ""}">${esc(issue.message)}</div>`).join("");
+}
+
+function readForm(formEl) {
+  const form = PB.state.form;
+  const data = new FormData(formEl);
+  form.title = data.get("title") || "";
+  form.eventTypeId = data.get("eventTypeId") || form.eventTypeId;
+  form.teamIds = [...formEl.querySelectorAll("[name=team]:checked")].map((box) => box.value);
+  form.homeAway = data.get("homeAway") || form.homeAway || "home";
+  form.opponent = data.get("opponent") || "";
+  form.awayLocation = data.get("awayLocation") || "";
+  form.venueId = data.get("venueId") ?? form.venueId;
+  form.pitchId = data.get("pitchId") ?? form.pitchId;
+  form.environment = data.get("environment") || form.environment;
+  form.surfaceId = data.get("surfaceId") || form.surfaceId;
+  form.formatId = data.get("formatId") || form.formatId;
+  form.status = data.get("status") || "scheduled";
+  form.notes = data.get("notes") || "";
+  const wasAllDay = form.allDay;
+  form.allDay = !!formEl.querySelector("[name=allDay]")?.checked;
+  form.repeat = data.get("repeat") || "none";
+  form.repeatUntil = data.get("repeatUntil") || "";
+  form.repeatCount = Number(data.get("repeatCount") || 8);
+  form.applyTo = data.get("applyTo") || "single";
+  form.acknowledgeLate = !!formEl.querySelector("[name=acknowledgeLate]")?.checked;
+  const start = String(data.get("start") || "");
+  const end = String(data.get("end") || "");
+  if (form.allDay) {
+    const startDay = start.slice(0, 10);
+    const endDay = end.slice(0, 10);
+    form.start = startDay + "T00:00:00";
+    const endDate = parseLocal(endDay + "T00:00:00");
+    if (!wasAllDay || end.includes("T")) endDate.setDate(endDate.getDate() + 1);
+    else endDate.setDate(endDate.getDate() + 1);
+    form.end = toLocalISO(endDate);
+  } else if (start.length <= 10) {
+    form.start = start + "T16:00:00";
+    form.end = (end.slice(0, 10) || start) + "T17:00:00";
+  } else {
+    form.start = start.length === 16 ? start + ":00" : start;
+    form.end = end.length === 16 ? end + ":00" : end;
+  }
+  return form;
+}
+
+function onFormChange(event) {
+  const formEl = event.currentTarget;
+  const previousPitch = PB.state.form.pitchId;
+  const previousVenue = PB.state.form.venueId;
+  const previousAllDay = PB.state.form.allDay;
+  readForm(formEl);
+  if (event.target.name === "pitchId" && PB.state.form.pitchId && PB.state.form.pitchId !== previousPitch) {
+    const pitch = pitchById(PB.state.form.pitchId);
+    if (pitch) applyPitch(PB.state.form, pitch);
+  }
+  if (event.target.name === "venueId" && PB.state.form.venueId !== previousVenue) {
+    const pitch = pitchById(PB.state.form.pitchId);
+    if (!pitch || pitch.venueId !== PB.state.form.venueId) PB.state.form.pitchId = "";
+  }
+  if (event.target.name === "surfaceId") {
+    const surface = byId(PB.state.surfaces, PB.state.form.surfaceId);
+    if (surface && surface.environment !== "either") PB.state.form.environment = surface.environment;
+  }
+  PB.state.dirty = true;
+  if (["allDay", "eventTypeId", "homeAway", "venueId", "pitchId", "surfaceId", "start", "end"].includes(event.target.name) || previousAllDay !== PB.state.form.allDay) {
+    renderInspector();
+    return;
+  }
+  renderLateBox();
+  const readout = document.getElementById("place-readout");
+  if (readout) renderPlaceFields();
+}
+
+async function saveForm(event) {
+  event.preventDefault();
+  const form = readForm(event.target);
+  try {
+    const saved = form.id ? await API.update(form.id, form) : await API.create(form);
+    if (form.id) {
+      const before = PB.state.events.find((item) => item.id === form.id);
+      if (before) pushUndo({ type: "update", before: editable(before) });
+    } else {
+      pushUndo({ type: "create", ids: (saved.events || []).map((item) => item.id) });
+    }
+    PB.state.dirty = false;
+    PB.state.form = null;
+    PB.state.selectedId = saved.events?.[0]?.id || null;
+    if (PB.state.selectedId) PB.state.formMode = "edit";
+    toast(saved.events?.length > 1 ? `Added ${saved.events.length} bookings.` : "Saved.");
+    if (saved.issues?.some((issue) => issue.level === "warning")) toast(saved.issues.find((issue) => issue.level === "warning").message);
+    PB.state.calendar?.refetchEvents();
+    renderInspector();
+  } catch (err) {
+    showIssues(err.data?.issues || [{ level: "error", message: errorText(err) }]);
+    toast(errorText(err));
+  }
+}
+
+async function deleteCurrent() {
+  const form = PB.state.form;
+  if (!form?.id) return;
+  const scope = form.seriesId && form.applyTo === "series" ? "series" : "single";
+  const ok = await confirmBox("Delete this booking?", scope === "series" ? "This removes every date in the set." : "This removes only this date.", "Delete");
+  if (!ok) return;
+  try {
+    const result = await API.remove(form.id, scope);
+    pushUndo({ type: "delete", events: result.deleted || [] });
+    PB.state.form = null;
+    PB.state.selectedId = null;
+    PB.state.calendar?.refetchEvents();
+    renderInspector();
+    toast("Deleted.");
+  } catch (err) {
+    toast(errorText(err));
+  }
+}
+
+async function findEarlier() {
+  readForm(document.getElementById("event-form"));
+  const host = document.getElementById("earlier-box");
+  host.innerHTML = `<p class="muted">Looking…</p>`;
+  try {
+    const data = await API.earlier(PB.state.form);
+    const slots = data.slots || [];
+    if (!slots.length) { host.innerHTML = `<p class="muted">No open pitch in the next week.</p>`; return; }
+    host.innerHTML = slots.map((slot, index) => `<button type="button" class="list-btn" data-slot="${index}">${esc(slot.label)}${slot.late ? " · late" : ""}</button>`).join("");
+    host.querySelectorAll("[data-slot]").forEach((button) => button.onclick = () => {
+      const slot = slots[Number(button.dataset.slot)];
+      const pitch = pitchById(slot.pitchId);
+      PB.state.form.start = slot.start;
+      PB.state.form.end = slot.end;
+      if (pitch) applyPitch(PB.state.form, pitch);
+      renderInspector();
+    });
+  } catch (err) {
+    host.innerHTML = "";
+    toast(errorText(err));
+  }
+}
+
+function renderStatus() {
+  const late = (PB.state.events || []).filter((event) => event.latePriority && matchesFilters(event)).length;
+  const shown = (PB.state.events || []).filter(matchesFilters).length;
+  document.getElementById("status").innerHTML = `<span>${shown} in this view${late ? ` · ${late} after the early window` : ""}</span><span>Local only · ${esc(PB.state.dataDir || "")}</span>`;
+}
+
+function renderSetup() {
+  const settings = PB.state.settings;
+  const early = (PB.state.ageGroups || []).filter((group) => group.maxAge < (settings.priorityCutoffAge || 11)).map((group) => group.name);
+  document.getElementById("setup").hidden = false;
+  document.getElementById("shell").hidden = true;
+  document.getElementById("setup").innerHTML = `<div class="setup-card">
+    <div class="word">Pitchboard</div>
+    <h1>Set the week’s rhythm.</h1>
+    <p>Practices, camps, and games stay on this computer. Players under the cutoff get the earlier hours before older teams are placed.</p>
+    <form id="setup-form">
+      <div class="row">
+        <label class="field"><span>Club name</span><input name="clubName" required value="${esc(settings.clubName || "")}" placeholder="Northfield Soccer Club" /></label>
+        <label class="field"><span>Season</span><input name="seasonName" value="${esc(settings.seasonName || "")}" /></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Season starts</span><input name="seasonStart" type="date" value="${esc(settings.seasonStart || "")}" /></label>
+        <label class="field"><span>Season ends</span><input name="seasonEnd" type="date" value="${esc(settings.seasonEnd || "")}" /></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Priority age</span><input name="priorityCutoffAge" type="number" min="4" max="30" value="${esc(settings.priorityCutoffAge || 11)}" /></label>
+        <label class="field"><span>Early window</span><div class="row"><input name="earlyWindowStart" type="time" value="${esc(settings.earlyWindowStart || "08:00")}" /><input name="earlyWindowEnd" type="time" value="${esc(settings.earlyWindowEnd || "17:30")}" /></div></label>
+      </div>
+      <label class="field"><span>If a young team is booked later</span><select name="priorityMode"><option value="warn">Allow it and mark it</option><option value="strict">Ask before saving</option></select></label>
+      <p class="muted" id="priority-preview">Early priority right now: ${esc(early.join(", ") || "none yet")}.</p>
+      <div class="choice">
+        <button type="submit" data-sample="1"><strong>Start with the sample club</strong><span class="muted">Northfield’s week, with indoor turf, hardcourt, a gym, grass, and outdoor turf. One U8 practice is late so you can see the warning.</span></button>
+        <button type="submit" data-sample="0"><strong>Start with an empty club</strong><span class="muted">Age groups and surfaces are ready. Add your own teams and pitches.</span></button>
+      </div>
+    </form>
+  </div>`;
+  const form = document.getElementById("setup-form");
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const sample = event.submitter?.dataset.sample === "1";
+    const next = { ...PB.state.settings, clubName: data.get("clubName"), seasonName: data.get("seasonName"), seasonStart: data.get("seasonStart"), seasonEnd: data.get("seasonEnd"), priorityCutoffAge: Number(data.get("priorityCutoffAge")), earlyWindowStart: data.get("earlyWindowStart"), earlyWindowEnd: data.get("earlyWindowEnd"), priorityMode: data.get("priorityMode") };
+    try {
+      adopt(await API.setup({ settings: next, sample }));
+      openApp();
+    } catch (err) { toast(errorText(err)); }
+  };
+}
+
+function renderTeams() {
+  const page = document.getElementById("page");
+  const editing = PB.state.teamDraft;
+  page.innerHTML = `<h1>Teams</h1><p class="muted">Age and the priority setting decide who is offered the earlier hours.</p><button type="button" class="btn" id="add-team">Add a team</button><div class="card" id="team-editor"></div><div id="team-table"></div>`;
+  page.querySelector("#add-team").onclick = () => { PB.state.teamDraft = { priority: "auto", active: true, color: "#2f6a4a", ageGroupId: PB.state.ageGroups[0]?.id || "" }; renderTeams(); };
+  const editor = page.querySelector("#team-editor");
+  if (!editing) editor.innerHTML = `<p class="muted">Select a team to edit it.</p>`;
+  else editor.innerHTML = teamEditor(editing);
+  page.querySelector("#team-table").innerHTML = PB.state.teams.map((team) => `<button type="button" class="list-btn" data-team="${esc(team.id)}"><span class="swatch" style="background:${esc(team.color || "#888")};display:inline-block"></span> ${esc(team.name)} <span class="muted">${esc(ageById(team.ageGroupId)?.name || "")}${isPriorityTeam(team) ? " · Early" : ""}</span></button>`).join("") || `<p>No teams yet.</p>`;
+  page.querySelectorAll("[data-team]").forEach((button) => button.onclick = () => { PB.state.teamDraft = { ...teamById(button.dataset.team) }; renderTeams(); });
+  const form = page.querySelector("#team-form");
+  if (form) {
+    form.onsubmit = saveTeamForm;
+    page.querySelector("#delete-team").onclick = async () => {
+      if (!PB.state.teamDraft.id) { PB.state.teamDraft = null; renderTeams(); return; }
+      if (!await confirmBox("Delete team?", "Bookings that use this team must be removed first.", "Delete")) return;
+      try { adopt(await API.deleteTeam(PB.state.teamDraft.id)); PB.state.teamDraft = null; renderTeams(); renderTeamList(); }
+      catch (err) { toast(errorText(err)); }
+    };
+  }
+}
+
+function teamEditor(team) {
+  return `<form id="team-form"><div class="row">
+      <label class="field"><span>Name</span><input name="name" required value="${esc(team.name || "")}" /></label>
+      <label class="field"><span>Short name</span><input name="shortName" value="${esc(team.shortName || "")}" /></label>
+    </div>
+    <div class="row">
+      <label class="field"><span>Age group</span><select name="ageGroupId">${PB.state.ageGroups.map((group) => `<option value="${esc(group.id)}" ${group.id === team.ageGroupId ? "selected" : ""}>${esc(group.name)} (${group.minAge}–${group.maxAge})</option>`).join("")}</select></label>
+      <label class="field"><span>Early hours</span><select name="priority"><option value="auto" ${team.priority !== "always" && team.priority !== "never" ? "selected" : ""}>Follow the age cutoff</option><option value="always" ${team.priority === "always" ? "selected" : ""}>Always give early hours</option><option value="never" ${team.priority === "never" ? "selected" : ""}>Never prioritize</option></select></label>
+    </div>
+    <div class="row">
+      <label class="field"><span>Coach</span><input name="coach" value="${esc(team.coach || "")}" /></label>
+      <label class="field"><span>Phone</span><input name="coachPhone" value="${esc(team.coachPhone || "")}" /></label>
+      <label class="field"><span>Email</span><input name="coachEmail" type="email" value="${esc(team.coachEmail || "")}" /></label>
+    </div>
+    <div class="row">
+      <label class="field"><span>Color</span><input name="color" type="color" value="${esc(team.color || "#2f6a4a")}" /></label>
+      <label class="field"><span>Preferred location</span><select name="preferredVenueId"><option value="">Any</option>${PB.state.venues.map((venue) => `<option value="${esc(venue.id)}" ${venue.id === team.preferredVenueId ? "selected" : ""}>${esc(venue.name)}</option>`).join("")}</select></label>
+      <label class="field"><span>Preferred surface</span><select name="preferredSurfaceId"><option value="">Any</option>${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${surface.id === team.preferredSurfaceId ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}</select></label>
+    </div>
+    <label class="field"><span>Notes</span><textarea name="notes">${esc(team.notes || "")}</textarea></label>
+    <label><input type="checkbox" name="active" ${team.active !== false ? "checked" : ""}/> Active</label>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Save team</button><button class="btn-ghost" id="delete-team" type="button">${team.id ? "Delete" : "Cancel"}</button></div>
+  </form>`;
+}
+
+async function saveTeamForm(event) {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const body = { ...PB.state.teamDraft, name: data.get("name"), shortName: data.get("shortName"), ageGroupId: data.get("ageGroupId"), priority: data.get("priority"), coach: data.get("coach"), coachPhone: data.get("coachPhone"), coachEmail: data.get("coachEmail"), color: data.get("color"), preferredVenueId: data.get("preferredVenueId"), preferredSurfaceId: data.get("preferredSurfaceId"), notes: data.get("notes"), active: data.get("active") === "on" };
+  try {
+    adopt(await API.saveTeam(body));
+    PB.state.teamDraft = null;
+    toast("Team saved.");
+    renderTeams();
+    renderTeamList();
+  } catch (err) { toast(errorText(err)); }
+}
+
+function renderPlaces() {
+  const page = document.getElementById("page");
+  page.innerHTML = `<h1>Places and pitches</h1><p class="muted">A place can hold indoor turf, a hardcourt, a gym, outdoor grass, and outdoor turf. The pitch records the surface and the game size.</p>
+    <button type="button" class="btn" id="add-venue">Add a location</button>
+    <div id="place-list"></div>`;
+  page.querySelector("#add-venue").onclick = () => { PB.state.venueDraft = { active: true, days: [0, 1, 2, 3, 4, 5, 6], openTime: "08:00", closeTime: "22:00" }; PB.state.pitchDraft = null; renderPlaces(); };
+  const list = page.querySelector("#place-list");
+  list.innerHTML = (PB.state.venueDraft ? venueCard(PB.state.venueDraft, true) : "") + PB.state.venues.map((venue) => venueCard(venue, false)).join("");
+  list.querySelectorAll("[data-edit-venue]").forEach((button) => button.onclick = () => { PB.state.venueDraft = { ...venueById(button.dataset.editVenue) }; renderPlaces(); });
+  list.querySelectorAll("[data-add-pitch]").forEach((button) => button.onclick = () => { PB.state.pitchDraft = { venueId: button.dataset.addPitch, active: true, environment: "indoor", days: [] }; renderPlaces(); });
+  const venueForm = list.querySelector("#venue-form");
+  if (venueForm) venueForm.onsubmit = saveVenueForm;
+  const pitchForm = list.querySelector("#pitch-form");
+  if (pitchForm) pitchForm.onsubmit = savePitchForm;
+  list.querySelectorAll("[data-edit-pitch]").forEach((button) => button.onclick = () => { PB.state.pitchDraft = { ...pitchById(button.dataset.editPitch) }; renderPlaces(); });
+  const deleteVenue = list.querySelector("#delete-venue");
+  if (deleteVenue) deleteVenue.onclick = async () => {
+    if (!PB.state.venueDraft?.id) { PB.state.venueDraft = null; renderPlaces(); return; }
+    if (!await confirmBox("Delete location?", "Remove its pitches first if it still has any.", "Delete")) return;
+    try { adopt(await API.deleteVenue(PB.state.venueDraft.id)); PB.state.venueDraft = null; renderPlaces(); } catch (err) { toast(errorText(err)); }
+  };
+  const deletePitch = list.querySelector("#delete-pitch");
+  if (deletePitch) deletePitch.onclick = async () => {
+    if (!PB.state.pitchDraft?.id) { PB.state.pitchDraft = null; renderPlaces(); return; }
+    if (!await confirmBox("Delete pitch?", "Bookings on this pitch must be moved first.", "Delete")) return;
+    try { adopt(await API.deletePitch(PB.state.pitchDraft.id)); PB.state.pitchDraft = null; renderPlaces(); } catch (err) { toast(errorText(err)); }
+  };
+}
+
+function venueCard(venue, editing) {
+  const pitches = PB.state.pitches.filter((pitch) => pitch.venueId === venue.id);
+  const body = editing ? `<form id="venue-form">${venueFields(venue)}<div class="row"><button class="btn" type="submit">Save location</button><button class="btn-ghost" id="delete-venue" type="button">${venue.id ? "Delete" : "Cancel"}</button></div></form>` : `<button type="button" class="btn-ghost" data-edit-venue="${esc(venue.id)}">Edit</button> <button type="button" class="btn-ghost" data-add-pitch="${esc(venue.id)}">Add pitch</button>`;
+  const pitchEdit = PB.state.pitchDraft && PB.state.pitchDraft.venueId === venue.id ? `<form id="pitch-form">${pitchFields(PB.state.pitchDraft)}<div class="row"><button class="btn" type="submit">Save pitch</button><button class="btn-ghost" id="delete-pitch" type="button">${PB.state.pitchDraft.id ? "Delete pitch" : "Cancel"}</button></div></form>` : "";
+  return `<div class="card"><h2>${esc(venue.name || "New location")}</h2><p class="muted">${esc(venue.address || "")}</p>${body}${pitchEdit}<div>${pitches.map((pitch) => `<button type="button" class="list-btn" data-edit-pitch="${esc(pitch.id)}">${esc(pitch.name)} · ${esc(pitch.environment)} · ${esc(byId(PB.state.surfaces, pitch.surfaceId)?.name || "")} · ${esc(byId(PB.state.formats, pitch.formatId)?.name || "")}</button>`).join("")}</div></div>`;
+}
+
+function venueFields(venue) {
+  return `<div class="row"><label class="field"><span>Name</span><input name="name" required value="${esc(venue.name || "")}" /></label><label class="field"><span>Address</span><input name="address" value="${esc(venue.address || "")}" /></label></div>
+    <div class="row"><label class="field"><span>Opens</span><input name="openTime" type="time" value="${esc(venue.openTime || "08:00")}" /></label><label class="field"><span>Closes</span><input name="closeTime" type="time" value="${esc(venue.closeTime || "22:00")}" /></label></div>
+    <div class="field"><span>Days open</span><div class="checks">${dayNames().map((name, index) => `<label><input type="checkbox" name="day" value="${index}" ${(venue.days || []).includes(index) ? "checked" : ""}/> ${name}</label>`).join("")}</div></div>
+    <label class="field"><span>Notes</span><textarea name="notes">${esc(venue.notes || "")}</textarea></label>
+    <label><input type="checkbox" name="active" ${venue.active !== false ? "checked" : ""}/> Active</label>`;
+}
+
+function pitchFields(pitch) {
+  return `<div class="row"><label class="field"><span>Pitch name</span><input name="name" required value="${esc(pitch.name || "")}" /></label>
+    <label class="field"><span>Indoor or outdoor</span><select name="environment"><option value="indoor" ${pitch.environment !== "outdoor" ? "selected" : ""}>Indoor</option><option value="outdoor" ${pitch.environment === "outdoor" ? "selected" : ""}>Outdoor</option></select></label></div>
+    <div class="row"><label class="field"><span>Surface</span><select name="surfaceId">${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${surface.id === pitch.surfaceId ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}</select></label>
+    <label class="field"><span>Pitch type</span><select name="formatId">${PB.state.formats.map((format) => `<option value="${esc(format.id)}" ${format.id === pitch.formatId ? "selected" : ""}>${esc(format.name)}</option>`).join("")}</select></label></div>
+    <label class="field"><span>Notes</span><textarea name="notes">${esc(pitch.notes || "")}</textarea></label>
+    <label><input type="checkbox" name="active" ${pitch.active !== false ? "checked" : ""}/> Active</label>`;
+}
+
+async function saveVenueForm(event) {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const body = { ...PB.state.venueDraft, name: data.get("name"), address: data.get("address"), openTime: data.get("openTime"), closeTime: data.get("closeTime"), notes: data.get("notes"), days: [...event.target.querySelectorAll("[name=day]:checked")].map((box) => Number(box.value)), active: data.get("active") === "on" };
+  try { adopt(await API.saveVenue(body)); PB.state.venueDraft = null; toast("Location saved."); renderPlaces(); } catch (err) { toast(errorText(err)); }
+}
+
+async function savePitchForm(event) {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const body = { ...PB.state.pitchDraft, name: data.get("name"), environment: data.get("environment"), surfaceId: data.get("surfaceId"), formatId: data.get("formatId"), notes: data.get("notes"), active: data.get("active") === "on" };
+  try { adopt(await API.savePitch(body)); PB.state.pitchDraft = null; toast("Pitch saved."); renderPlaces(); } catch (err) { toast(errorText(err)); }
+}
+
+function renderPlan() {
+  const page = document.getElementById("page");
+  const start = PB.state.rangeStart ? ymd(PB.state.rangeStart) : ymd(new Date());
+  const endDefault = PB.state.settings.seasonEnd || ymd(new Date(Date.now() + 56 * 86400000));
+  page.innerHTML = `<h1>Plan the week</h1>
+    <p>Younger teams are placed first, as early as the pitches allow. Older teams fill in after ${esc(clockLabel(PB.state.settings.earlyWindowEnd, PB.state.settings.timeFormat))} when they can.</p>
+    <form id="plan-form" class="card">
+      <div class="field"><span>Teams</span><div class="checks">${PB.state.teams.filter((team) => team.active !== false).map((team) => `<label><input type="checkbox" name="team" value="${esc(team.id)}" ${isPriorityTeam(team) ? "checked" : ""}/> ${esc(team.shortName || team.name)}</label>`).join("")}</div></div>
+      <div class="row">
+        <label class="field"><span>From</span><input name="rangeStart" type="date" value="${esc(start)}" /></label>
+        <label class="field"><span>Through</span><input name="rangeEnd" type="date" value="${esc(endDefault)}" /></label>
+        <label class="field"><span>Type</span><select name="eventTypeId">${PB.state.eventTypes.map((type) => `<option value="${esc(type.id)}">${esc(type.name)}</option>`).join("")}</select></label>
+      </div>
+      <div class="field"><span>Days</span><div class="checks">${dayNames().map((name, index) => `<label><input type="checkbox" name="day" value="${index}" ${index >= 1 && index <= 4 ? "checked" : ""}/> ${name}</label>`).join("")}</div></div>
+      <div class="row">
+        <label class="field"><span>Sessions a week</span><input name="sessionsPerWeek" type="number" min="1" max="7" value="1" /></label>
+        <label class="field"><span>Minutes (blank uses each age group)</span><input name="durationMinutes" type="number" min="15" step="5" placeholder="60" /></label>
+      </div>
+      <button class="btn" type="submit">Preview</button>
+    </form>
+    <div id="plan-results"></div>
+    <div class="card"><h2>Early-hour issues</h2><p class="muted">Young teams in the visible calendar range who start after the early window.</p><button type="button" class="btn-ghost" id="load-fixes">Look for earlier pitches</button><div id="fix-list"></div></div>
+    <div class="card"><h2>Copy a week</h2><p class="muted">Copies whatever is currently on screen forward, and skips anything that would double-book a pitch.</p><button type="button" class="btn-ghost" id="copy-week">Copy this view forward one week</button></div>`;
+  page.querySelector("#plan-form").onsubmit = previewPlan;
+  page.querySelector("#load-fixes").onclick = loadFixes;
+  page.querySelector("#copy-week").onclick = copyVisibleWeek;
+}
+
+async function previewPlan(event) {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const body = {
+    teamIds: [...event.target.querySelectorAll("[name=team]:checked")].map((box) => box.value),
+    eventTypeId: data.get("eventTypeId"),
+    rangeStart: data.get("rangeStart"),
+    rangeEnd: data.get("rangeEnd"),
+    daysOfWeek: [...event.target.querySelectorAll("[name=day]:checked")].map((box) => Number(box.value)),
+    sessionsPerWeek: Number(data.get("sessionsPerWeek") || 1),
+    durationMinutes: Number(data.get("durationMinutes") || 0),
+  };
+  const host = document.getElementById("plan-results");
+  host.innerHTML = `<p class="muted">Building a draft…</p>`;
+  try {
+    const result = await API.suggest(body);
+    PB.state.plan = result;
+    const rows = result.proposals || [];
+    host.innerHTML = `<div class="card"><h2>${rows.length} proposed</h2>
+      ${rows.map((item, index) => `<label class="list-btn"><input type="checkbox" data-prop="${index}" checked/> ${esc(item.event.title)} · ${esc(formatRange(item.event.start, item.event.end, false))} · ${esc(item.event.pitchId ? (pitchById(item.event.pitchId)?.name || "") : "")} ${(item.warnings || []).map((warning) => `<div class="issue">${esc(warning)}</div>`).join("")}</label>`).join("")}
+      ${(result.unscheduled || []).map((item) => `<div class="issue">${esc(item.team)}: ${esc(item.reason)}</div>`).join("")}
+      <button type="button" class="btn" id="commit-plan">Add selected</button></div>`;
+    host.querySelector("#commit-plan").onclick = commitPlan;
+  } catch (err) {
+    host.innerHTML = "";
+    toast(errorText(err));
+  }
+}
+
+async function commitPlan() {
+  const chosen = [...document.querySelectorAll("[data-prop]:checked")].map((box) => PB.state.plan.proposals[Number(box.dataset.prop)].event);
+  if (!chosen.length) { toast("Select at least one."); return; }
+  try {
+    const saved = await API.batch(chosen, true);
+    pushUndo({ type: "create", ids: (saved.events || []).map((event) => event.id) });
+    toast(`Added ${saved.events.length}.`);
+    PB.state.calendar?.refetchEvents();
+  } catch (err) { toast(errorText(err)); }
+}
+
+async function loadFixes() {
+  const host = document.getElementById("fix-list");
+  host.innerHTML = `<p class="muted">Checking…</p>`;
+  try {
+    const data = await API.fixes(toLocalISO(PB.state.rangeStart || new Date()), toLocalISO(PB.state.rangeEnd || new Date()));
+    const proposals = data.proposals || [];
+    if (!proposals.length) { host.innerHTML = `<p>No earlier opening in that range.</p>`; return; }
+    host.innerHTML = proposals.map((item, index) => `<div class="card"><p>${esc(item.summary)}</p><button type="button" class="btn" data-fix="${index}">Apply</button></div>`).join("");
+    host.querySelectorAll("[data-fix]").forEach((button) => button.onclick = async () => {
+      try {
+        await API.applyFix(proposals[Number(button.dataset.fix)]);
+        toast("Updated.");
+        PB.state.calendar?.refetchEvents();
+        loadFixes();
+      } catch (err) { toast(errorText(err)); }
+    });
+  } catch (err) { host.innerHTML = ""; toast(errorText(err)); }
+}
+
+async function copyVisibleWeek() {
+  if (!PB.state.rangeStart) return;
+  try {
+    const result = await API.copyWeek(toLocalISO(PB.state.rangeStart), toLocalISO(PB.state.rangeEnd), 1);
+    toast(`Copied ${result.events.length}. Skipped ${result.skipped.length}.`);
+    if (result.skipped[0]) toast(result.skipped[0]);
+    PB.state.calendar?.gotoDate(new Date(PB.state.rangeStart.getTime() + 7 * 86400000));
+  } catch (err) { toast(errorText(err)); }
+}
+
+function renderSettings() {
+  const settings = PB.state.settings;
+  const page = document.getElementById("page");
+  const early = PB.state.ageGroups.filter((group) => group.maxAge < settings.priorityCutoffAge).map((group) => group.name);
+  page.innerHTML = `<h1>Settings</h1>
+    <form id="settings-form" class="card">
+      <h2>Club</h2>
+      <div class="row"><label class="field"><span>Name</span><input name="clubName" value="${esc(settings.clubName)}" /></label><label class="field"><span>Season</span><input name="seasonName" value="${esc(settings.seasonName)}" /></label></div>
+      <div class="row"><label class="field"><span>Starts</span><input type="date" name="seasonStart" value="${esc(settings.seasonStart)}" /></label><label class="field"><span>Ends</span><input type="date" name="seasonEnd" value="${esc(settings.seasonEnd)}" /></label><label class="field"><span>Time label</span><input name="timezoneLabel" value="${esc(settings.timezoneLabel)}" /></label></div>
+      <h2>Calendar</h2>
+      <div class="row">
+        <label class="field"><span>Week starts</span><select name="weekStartsOn">${dayNames().map((name, index) => `<option value="${index}" ${settings.weekStartsOn === index ? "selected" : ""}>${name}</option>`).join("")}</select></label>
+        <label class="field"><span>Time</span><select name="timeFormat"><option value="12" ${settings.timeFormat !== "24" ? "selected" : ""}>12-hour</option><option value="24" ${settings.timeFormat === "24" ? "selected" : ""}>24-hour</option></select></label>
+        <label class="field"><span>Default view</span><select name="defaultView">${[["timeGridDay", "Day"], ["timeGridWorkWeek", "Work week"], ["timeGridWeek", "Week"], ["dayGridMonth", "Month"]].map(([id, label]) => `<option value="${id}" ${settings.defaultView === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Day starts</span><input name="dayStartHour" type="number" min="0" max="20" value="${esc(settings.dayStartHour)}" /></label>
+        <label class="field"><span>Day ends</span><input name="dayEndHour" type="number" min="1" max="24" value="${esc(settings.dayEndHour)}" /></label>
+        <label class="field"><span>Slot minutes</span><select name="slotMinutes">${[10, 15, 20, 30, 60].map((n) => `<option ${settings.slotMinutes === n ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+      </div>
+      <label><input type="checkbox" name="showWeekends" ${settings.showWeekends ? "checked" : ""}/> Show weekends in the week view</label>
+      <h2>Early hours</h2>
+      <p class="muted">A team is under the cutoff when its age group’s oldest age is lower than this number. U10 (max age 10) qualifies at 11. U12 does not.</p>
+      <div class="row">
+        <label class="field"><span>Cutoff age</span><input name="priorityCutoffAge" type="number" min="4" max="30" value="${esc(settings.priorityCutoffAge)}" /></label>
+        <label class="field"><span>Window starts</span><input name="earlyWindowStart" type="time" value="${esc(settings.earlyWindowStart)}" /></label>
+        <label class="field"><span>Window ends</span><input name="earlyWindowEnd" type="time" value="${esc(settings.earlyWindowEnd)}" /></label>
+      </div>
+      <label class="field"><span>When someone books a young team later</span><select name="priorityMode"><option value="warn" ${settings.priorityMode !== "strict" ? "selected" : ""}>Allow it and mark it</option><option value="strict" ${settings.priorityMode === "strict" ? "selected" : ""}>Require confirmation</option></select></label>
+      <div class="field"><span>Rule applies on</span><div class="checks">${dayNames().map((name, index) => `<label><input type="checkbox" name="priorityDay" value="${index}" ${(settings.priorityDays || []).includes(index) ? "checked" : ""}/> ${name}</label>`).join("")}</div></div>
+      <div class="field"><span>And for</span><div class="checks">${["practice", "camp", "game", "other"].map((cat) => `<label><input type="checkbox" name="priorityCat" value="${cat}" ${(settings.priorityCategories || []).includes(cat) ? "checked" : ""}/> ${cat}</label>`).join("")}</div></div>
+      <p>Early priority with these ages: <strong>${esc(early.join(", ") || "nobody")}</strong></p>
+      <label><input type="checkbox" name="olderTeamsAvoidEarly" ${settings.olderTeamsAvoidEarly ? "checked" : ""}/> When planning, keep older teams out of the early window if a later pitch is free</label><br/>
+      <label><input type="checkbox" name="legendEnabled" ${settings.legendEnabled ? "checked" : ""}/> Show the early-window note on the calendar</label>
+      <h2>Conflicts</h2>
+      <label><input type="checkbox" name="blockPitchConflicts" ${settings.blockPitchConflicts ? "checked" : ""}/> One booking per pitch</label><br/>
+      <label><input type="checkbox" name="blockTeamConflicts" ${settings.blockTeamConflicts ? "checked" : ""}/> A team cannot be in two places at once</label><br/>
+      <label><input type="checkbox" name="warnCoachConflicts" ${settings.warnCoachConflicts ? "checked" : ""}/> Warn when one coach is booked twice</label><br/>
+      <label><input type="checkbox" name="blockBlackouts" ${settings.blockBlackouts ? "checked" : ""}/> Refuse bookings on closure dates</label>
+      <div style="margin-top:12px"><button class="btn" type="submit">Save settings</button></div>
+    </form>
+    <div class="card"><h2>Age groups</h2><div id="age-editor"></div><button type="button" class="btn-ghost" id="add-age">Add age group</button></div>
+    <div class="card"><h2>Surfaces</h2><div id="surface-editor"></div><button type="button" class="btn-ghost" id="add-surface">Add surface</button></div>
+    <div class="card"><h2>Pitch types</h2><div id="format-editor"></div><button type="button" class="btn-ghost" id="add-format">Add pitch type</button></div>
+    <div class="card"><h2>Event types</h2><div id="type-editor"></div><button type="button" class="btn-ghost" id="add-type">Add type</button></div>
+    <div class="card"><h2>Closures</h2><div id="blackout-editor"></div><button type="button" class="btn-ghost" id="add-blackout">Add a closure</button></div>
+    <div class="card"><h2>This computer</h2>
+      <p>The schedule is in <code>${esc(PB.state.dataDir)}</code>. Copy that folder with Pitchboard.exe to move the club to another Windows computer.</p>
+      <button type="button" class="btn-ghost" id="backup">Download backup</button>
+      <label class="btn-ghost">Restore backup<input id="restore" type="file" accept="application/json,.json" hidden /></label>
+      <button type="button" class="btn-ghost" id="load-sample">Replace with the sample club</button>
+      <button type="button" class="btn-ghost" id="load-blank">Remove teams and bookings</button>
+      <button type="button" class="btn-ghost" id="exit-app">Exit Pitchboard</button>
+    </div>`;
+  page.querySelector("#settings-form").onsubmit = saveSettingsForm;
+  drawAges(); drawSurfaces(); drawFormats(); drawTypes(); drawBlackouts();
+  page.querySelector("#add-age").onclick = async () => { try { adopt(await API.saveAge({ name: "New group", minAge: 8, maxAge: 9, preferredFormatId: PB.state.formats[0]?.id || "", defaultPracticeMinutes: 60, defaultGameMinutes: 60, sortOrder: PB.state.ageGroups.length + 1 })); drawAges(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#add-surface").onclick = async () => { try { adopt(await API.saveSurface({ name: "New surface", environment: "outdoor" })); drawSurfaces(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#add-format").onclick = async () => { try { adopt(await API.saveFormat({ name: "New type", sort: PB.state.formats.length + 1 })); drawFormats(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#add-type").onclick = async () => { try { adopt(await API.saveType({ name: "Scrimmage", category: "other", color: "#8a4b2f", defaultMinutes: 60 })); drawTypes(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#add-blackout").onclick = async () => { const day = ymd(new Date()); try { adopt(await API.saveBlackout({ start: day, end: day, venueId: "", reason: "Closed" })); drawBlackouts(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#backup").onclick = downloadBackup;
+  page.querySelector("#restore").onchange = restoreBackup;
+  page.querySelector("#load-sample").onclick = async () => { if (!await confirmBox("Load the sample club?", "This replaces teams, places, and bookings.", "Replace")) return; adopt(await API.reset("sample")); toast("Sample club loaded."); PB.state.calendar?.refetchEvents(); renderSettings(); };
+  page.querySelector("#load-blank").onclick = async () => { if (!await confirmBox("Clear the club?", "Teams, places, and bookings will be removed. Settings stay.", "Clear")) return; adopt(await API.reset("blank")); toast("Club cleared."); PB.state.calendar?.refetchEvents(); renderSettings(); };
+  page.querySelector("#exit-app").onclick = async () => { if (!await confirmBox("Exit Pitchboard?", "The page will stop responding because the program closes.", "Exit")) return; try { await API.shutdown(); } catch { /* process exit drops the connection */ } toast("Pitchboard has closed. You can close this tab."); };
+}
+
+async function saveSettingsForm(event) {
+  event.preventDefault();
+  const data = new FormData(event.target);
+  const on = (name) => data.get(name) === "on";
+  const next = {
+    ...PB.state.settings,
+    clubName: data.get("clubName"),
+    seasonName: data.get("seasonName"),
+    seasonStart: data.get("seasonStart"),
+    seasonEnd: data.get("seasonEnd"),
+    timezoneLabel: data.get("timezoneLabel"),
+    weekStartsOn: Number(data.get("weekStartsOn")),
+    timeFormat: data.get("timeFormat"),
+    defaultView: data.get("defaultView"),
+    dayStartHour: Number(data.get("dayStartHour")),
+    dayEndHour: Number(data.get("dayEndHour")),
+    slotMinutes: Number(data.get("slotMinutes")),
+    showWeekends: on("showWeekends"),
+    priorityCutoffAge: Number(data.get("priorityCutoffAge")),
+    earlyWindowStart: data.get("earlyWindowStart"),
+    earlyWindowEnd: data.get("earlyWindowEnd"),
+    priorityMode: data.get("priorityMode"),
+    priorityDays: [...event.target.querySelectorAll("[name=priorityDay]:checked")].map((box) => Number(box.value)),
+    priorityCategories: [...event.target.querySelectorAll("[name=priorityCat]:checked")].map((box) => box.value),
+    olderTeamsAvoidEarly: on("olderTeamsAvoidEarly"),
+    legendEnabled: on("legendEnabled"),
+    blockPitchConflicts: on("blockPitchConflicts"),
+    blockTeamConflicts: on("blockTeamConflicts"),
+    warnCoachConflicts: on("warnCoachConflicts"),
+    blockBlackouts: on("blockBlackouts"),
+  };
+  try {
+    const saved = await API.saveSettings(next);
+    PB.state.settings = saved.settings;
+    applyCalendarOptions();
+    renderLegend();
+    toast("Settings saved.");
+    renderSettings();
+  } catch (err) { toast(errorText(err)); }
+}
+
+function drawAges() {
+  const host = document.getElementById("age-editor");
+  if (!host) return;
+  host.innerHTML = PB.state.ageGroups.map((group) => `<div class="row" data-age="${esc(group.id)}">
+    <input data-k="name" value="${esc(group.name)}" />
+    <input data-k="minAge" type="number" value="${group.minAge}" />
+    <input data-k="maxAge" type="number" value="${group.maxAge}" />
+    <input data-k="defaultPracticeMinutes" type="number" value="${group.defaultPracticeMinutes}" />
+    <button type="button" data-save>Save</button><button type="button" data-del>Delete</button>
+  </div>`).join("");
+  host.querySelectorAll("[data-age]").forEach((row) => {
+    row.querySelector("[data-save]").onclick = async () => {
+      const group = { ...ageById(row.dataset.age) };
+      row.querySelectorAll("[data-k]").forEach((input) => { group[input.dataset.k] = input.type === "number" ? Number(input.value) : input.value; });
+      try { adopt(await API.saveAge(group)); toast("Age group saved."); } catch (err) { toast(errorText(err)); }
+    };
+    row.querySelector("[data-del]").onclick = async () => {
+      try { adopt(await API.deleteAge(row.dataset.age)); drawAges(); } catch (err) { toast(errorText(err)); }
+    };
+  });
+}
+
+function drawSurfaces() {
+  const host = document.getElementById("surface-editor");
+  if (!host) return;
+  host.innerHTML = PB.state.surfaces.map((surface) => `<div class="row" data-id="${esc(surface.id)}"><input data-k="name" value="${esc(surface.name)}" /><select data-k="environment"><option value="indoor" ${surface.environment === "indoor" ? "selected" : ""}>Indoor</option><option value="outdoor" ${surface.environment === "outdoor" ? "selected" : ""}>Outdoor</option><option value="either" ${surface.environment === "either" ? "selected" : ""}>Either</option></select><button type="button" data-save>Save</button><button type="button" data-del>Delete</button></div>`).join("");
+  wireRows(host, (id) => byId(PB.state.surfaces, id), API.saveSurface, API.deleteSurface, drawSurfaces);
+}
+
+function drawFormats() {
+  const host = document.getElementById("format-editor");
+  if (!host) return;
+  host.innerHTML = PB.state.formats.map((format) => `<div class="row" data-id="${esc(format.id)}"><input data-k="name" value="${esc(format.name)}" /><button type="button" data-save>Save</button><button type="button" data-del>Delete</button></div>`).join("");
+  wireRows(host, (id) => byId(PB.state.formats, id), API.saveFormat, API.deleteFormat, drawFormats);
+}
+
+function drawTypes() {
+  const host = document.getElementById("type-editor");
+  if (!host) return;
+  host.innerHTML = PB.state.eventTypes.map((type) => `<div class="row" data-id="${esc(type.id)}"><input data-k="name" value="${esc(type.name)}" /><select data-k="category">${["practice", "camp", "game", "other"].map((cat) => `<option ${type.category === cat ? "selected" : ""}>${cat}</option>`).join("")}</select><input data-k="defaultMinutes" type="number" value="${type.defaultMinutes}" /><input data-k="color" type="color" value="${esc(type.color || "#2f6a4a")}" /><button type="button" data-save>Save</button><button type="button" data-del>Delete</button></div>`).join("");
+  wireRows(host, (id) => typeById(id), API.saveType, API.deleteType, drawTypes);
+}
+
+function drawBlackouts() {
+  const host = document.getElementById("blackout-editor");
+  if (!host) return;
+  host.innerHTML = PB.state.blackouts.map((item) => `<div class="row" data-id="${esc(item.id)}"><input data-k="start" type="date" value="${esc(item.start)}" /><input data-k="end" type="date" value="${esc(item.end)}" /><select data-k="venueId"><option value="">All locations</option>${PB.state.venues.map((venue) => `<option value="${esc(venue.id)}" ${venue.id === item.venueId ? "selected" : ""}>${esc(venue.name)}</option>`).join("")}</select><input data-k="reason" value="${esc(item.reason)}" /><button type="button" data-save>Save</button><button type="button" data-del>Delete</button></div>`).join("") || `<p class="muted">No closures.</p>`;
+  wireRows(host, (id) => PB.state.blackouts.find((item) => item.id === id), API.saveBlackout, API.deleteBlackout, drawBlackouts);
+}
+
+function wireRows(host, find, save, remove, redraw) {
+  host.querySelectorAll("[data-id]").forEach((row) => {
+    row.querySelector("[data-save]").onclick = async () => {
+      const body = { ...find(row.dataset.id) };
+      row.querySelectorAll("[data-k]").forEach((input) => { body[input.dataset.k] = input.type === "number" ? Number(input.value) : input.value; });
+      try { adopt(await save(body)); toast("Saved."); } catch (err) { toast(errorText(err)); }
+    };
+    row.querySelector("[data-del]").onclick = async () => {
+      try { adopt(await remove(row.dataset.id)); redraw(); } catch (err) { toast(errorText(err)); }
+    };
+  });
+}
+
+function openExport() {
+  const start = PB.state.rangeStart ? ymd(PB.state.rangeStart) : (PB.state.settings.seasonStart || ymd(new Date()));
+  const end = PB.state.rangeEnd ? ymd(new Date(PB.state.rangeEnd.getTime() - 86400000)) : (PB.state.settings.seasonEnd || start);
+  const root = document.getElementById("modal-root");
+  root.innerHTML = `<div class="modal-back"><form class="modal" id="export-form"><h2>Export</h2>
+    <div class="row"><label class="field"><span>From</span><input name="start" type="date" value="${esc(start)}" /></label><label class="field"><span>Through</span><input name="end" type="date" value="${esc(end)}" /></label></div>
+    <label><input type="checkbox" name="cancelled" /> Include cancelled</label>
+    <div class="row" style="margin-top:12px">
+      <button class="btn" name="kind" value="csv" type="submit">CSV</button>
+      <button class="btn" name="kind" value="xlsx" type="submit">Excel</button>
+      <button class="btn" name="kind" value="pdf" type="submit">PDF</button>
+      <button class="btn" name="kind" value="ics" type="submit">Calendar</button>
+    </div>
+    <button type="button" class="btn-ghost" id="export-close">Close</button>
+  </form></div>`;
+  root.querySelector("#export-close").onclick = () => { root.innerHTML = ""; };
+  root.querySelector("#export-form").onsubmit = async (event) => {
+    event.preventDefault();
+    const data = new FormData(event.target);
+    const kind = event.submitter.value;
+    const params = new URLSearchParams({ start: data.get("start") + "T00:00:00", end: data.get("end") + "T23:59:59" });
+    if (data.get("cancelled")) params.set("cancelled", "1");
+    try {
+      const file = await API.file("/api/export/" + kind + "?" + params.toString());
+      downloadBlob(file.blob, file.filename);
+      root.innerHTML = "";
+    } catch (err) { toast(errorText(err)); }
+  };
+}
+
+async function downloadBackup() {
+  try {
+    const file = await API.file("/api/backup");
+    downloadBlob(file.blob, file.filename);
+  } catch (err) { toast(errorText(err)); }
+}
+
+async function restoreBackup(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!await confirmBox("Restore this backup?", "The schedule on this computer will be replaced.", "Restore")) return;
+  try {
+    const text = await file.text();
+    adopt(await API.restore(JSON.parse(text)));
+    toast("Backup restored.");
+    PB.state.calendar?.refetchEvents();
+    renderSettings();
+  } catch (err) { toast(errorText(err)); }
+}
+
+async function refreshSummary() {
+  if (!PB.state.mini) return;
+  const start = new Date(PB.state.mini.getFullYear(), PB.state.mini.getMonth(), 1);
+  const end = new Date(PB.state.mini.getFullYear(), PB.state.mini.getMonth() + 1, 1);
+  try {
+    const data = await API.summary(toLocalISO(start), toLocalISO(end));
+    PB.state.summary = data.days || [];
+    renderMini();
+  } catch { /* the calendar still works without dots */ }
+}
