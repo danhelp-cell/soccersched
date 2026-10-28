@@ -67,8 +67,10 @@ const API = {
     }
     const blob = await res.blob();
     const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
-    return { blob, filename: match ? match[1] : "pitchboard" };
+    return { blob, filename: match ? match[1] : "pitchboard", notice: res.headers.get("X-Pitchboard-Notice") || "" };
   },
+  saveExportProfile(row) { return row.id ? this.req("PUT", "/api/export-profiles/" + encodeURIComponent(row.id), row) : this.req("POST", "/api/export-profiles", row); },
+  deleteExportProfile(id) { return this.req("DELETE", "/api/export-profiles/" + encodeURIComponent(id)); },
   restore(data) { return this.req("POST", "/api/backup", data); },
   shutdown() { return this.req("POST", "/api/shutdown", {}); },
 };

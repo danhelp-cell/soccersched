@@ -1,6 +1,6 @@
 # Pitchboard
 
-Pitchboard is a portable soccer-club scheduler for one Windows computer. It keeps practices, camps, and games on an Outlook-style calendar, with drag and drop, indoor and outdoor pitches, and earlier hours reserved first for players under 11.
+Pitchboard is a portable soccer-club scheduler for one Windows computer. It is set up first for [Aurora Soccer Club](https://aurorasoccer.ca/), and the colours, fonts, age groups, and exports can be changed for any other club. It keeps practices, camps, and games on an Outlook-style calendar, with drag and drop, indoor and outdoor pitches, and earlier hours reserved first for players under 11.
 
 No account and no network are required. The program listens only on this computer.
 
@@ -32,6 +32,27 @@ go run ./cmd/pitchboard
 
 Drag a team from the left onto a time, or drag across the grid to create a booking. Drag a booking to move it, and drag its edge to change the length.
 
+## Look
+
+The default theme matches Aurora’s site: black header `#171717`, green `#29683b`, Oswald for headings, and Merriweather for text. Settings → Look changes every colour and the two fonts. **Use Aurora colours** puts the original palette back.
+
+## Age groups
+
+Each age group can hold as many teams as you need. Groups are fully editable: name, ages, program (Development, City Rec, Alliance, Academy, or any label you type), practice and game length, sessions a week, and the pitch size.
+
+A group can also set its own hours. Leave the hours blank to use the club early window. Aurora Advanced Academy in the sample uses 4:30–8:30 PM, so the planner offers those teams the evening instead of the morning. Early hours can be forced on or off for a whole group, separate from the under-11 cutoff.
+
+## Exports to other systems
+
+Besides CSV, Excel, PDF, and iCalendar, Export can build a file for:
+
+- **RAMP InterActive** practices: `Team_ID`, `Event_Type` (always `Practice`), `Start_Date` (`YYYY-MM-DD`), `Start_Time` and `End_Time` (`07:15 PM`), `Location_ID`, `Notes`. Team and location ids are the numeric ids from RAMP. Enter them on each team and each place. A pitch id overrides the place. Rows missing an id are left out, and Pitchboard says how many.
+- **TeamLinkt**: date, time, type, division, home team, away team, location, duration, notes. Use the names already stored in TeamLinkt.
+- **TeamSnap**: the team schedule template, with dates as `MM/DD/YYYY`. Practices omit the opponent.
+- **GameChanger**: `date`, `time`, `home`, `away`, `location`, `duration` in minutes.
+
+Settings can save a named export that keeps one of those layouts and limits it to practices, camps, games, or other types.
+
 ## Earlier hours for younger players
 
 Age groups whose oldest players are **under the cutoff** (11 by default) are the early-priority teams. U10 qualifies. U12 does not. The early window defaults to 8:00–5:30, and both the age and the hours can be changed in Settings.
@@ -56,4 +77,4 @@ Settings also downloads and restores a full JSON backup.
 
 ## Sample club
 
-The first screen can load **Northfield Soccer Club**: a week of practices, a weekend skills camp, and games across a dome, a recreation centre (hardcourt and gym), a grass park, and an outdoor turf complex. One U8 practice is intentionally late so the early-hour warning is visible.
+The first screen can load a sample week for **Aurora Soccer Club**: several teams in the same age groups, an Academy group with evening hours, and bookings across the SaskTel Sports Centre, Henk Ruys Soccer Centre, and Forest Park. One U8 practice is intentionally late so the early-hour warning is visible. The sample RAMP ids are placeholders to replace with the real numbers from RAMP.

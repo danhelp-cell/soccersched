@@ -50,7 +50,7 @@ func TestSetupConflictAndExport(t *testing.T) {
 	}
 	var late map[string]any
 	for _, ev := range listed.Events {
-		if ev["title"] == "U8 Red Practice" && ev["latePriority"] == true {
+		if ev["title"] == "U8 Black Practice" && ev["latePriority"] == true {
 			late = ev
 		}
 	}
@@ -65,7 +65,7 @@ func TestSetupConflictAndExport(t *testing.T) {
 		t.Fatalf("duplicate pitch should conflict, got %d %s", conflict.StatusCode, conflict.Body)
 	}
 	file := call(t, ts, http.MethodGet, "/api/export/csv?start=2026-01-01T00:00:00&end=2027-01-01T00:00:00", "")
-	if file.StatusCode != 200 || !strings.Contains(file.Body, "Test FC") && !bytes.Contains(file.Raw, []byte("U8 Red")) {
+	if file.StatusCode != 200 || !strings.Contains(file.Body, "Test FC") && !bytes.Contains(file.Raw, []byte("U8 Black")) {
 		t.Fatalf("csv export failed: %d %s", file.StatusCode, file.Body[:min(200, len(file.Body))])
 	}
 	if !bytes.HasPrefix(file.Raw, []byte{0xEF, 0xBB, 0xBF}) {

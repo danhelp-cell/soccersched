@@ -14,18 +14,19 @@ const Version = 1
 const WallLayout = "2006-01-02T15:04:05"
 
 type Database struct {
-	Version    int         `json:"version"`
-	NextID     int         `json:"nextId"`
-	Settings   Settings    `json:"settings"`
-	AgeGroups  []AgeGroup  `json:"ageGroups"`
-	Teams      []Team      `json:"teams"`
-	Venues     []Venue     `json:"venues"`
-	Pitches    []Pitch     `json:"pitches"`
-	Surfaces   []Surface   `json:"surfaces"`
-	Formats    []Format    `json:"formats"`
-	EventTypes []EventType `json:"eventTypes"`
-	Events     []Event     `json:"events"`
-	Blackouts  []Blackout  `json:"blackouts"`
+	Version        int             `json:"version"`
+	NextID         int             `json:"nextId"`
+	Settings       Settings        `json:"settings"`
+	AgeGroups      []AgeGroup      `json:"ageGroups"`
+	Teams          []Team          `json:"teams"`
+	Venues         []Venue         `json:"venues"`
+	Pitches        []Pitch         `json:"pitches"`
+	Surfaces       []Surface       `json:"surfaces"`
+	Formats        []Format        `json:"formats"`
+	EventTypes     []EventType     `json:"eventTypes"`
+	Events         []Event         `json:"events"`
+	Blackouts      []Blackout      `json:"blackouts"`
+	ExportProfiles []ExportProfile `json:"exportProfiles"`
 }
 
 type Settings struct {
@@ -54,6 +55,39 @@ type Settings struct {
 	BlockBlackouts       bool     `json:"blockBlackouts"`
 	OlderTeamsAvoidEarly bool     `json:"olderTeamsAvoidEarly"`
 	LegendEnabled        bool     `json:"legendEnabled"`
+	Theme                Theme    `json:"theme"`
+}
+
+// Theme is the club's colours and type. Aurora Soccer is the built-in default.
+type Theme struct {
+	Header      string `json:"header"`
+	HeaderInk   string `json:"headerInk"`
+	Rail        string `json:"rail"`
+	Accent      string `json:"accent"`
+	AccentInk   string `json:"accentInk"`
+	Paper       string `json:"paper"`
+	Card        string `json:"card"`
+	Ink         string `json:"ink"`
+	Muted       string `json:"muted"`
+	Line        string `json:"line"`
+	DisplayFont string `json:"displayFont"`
+	BodyFont    string `json:"bodyFont"`
+}
+
+// SystemIDs are the numbers and names other registration sites use for this record.
+type SystemIDs struct {
+	Ramp        string `json:"ramp"`
+	TeamLinkt   string `json:"teamlinkt"`
+	TeamSnap    string `json:"teamsnap"`
+	GameChanger string `json:"gamechanger"`
+}
+
+// ExportProfile is a saved file layout for one online system.
+type ExportProfile struct {
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	System     string   `json:"system"`
+	Categories []string `json:"categories"`
 }
 
 type AgeGroup struct {
@@ -65,49 +99,57 @@ type AgeGroup struct {
 	DefaultPracticeMinutes int    `json:"defaultPracticeMinutes"`
 	DefaultGameMinutes     int    `json:"defaultGameMinutes"`
 	SortOrder              int    `json:"sortOrder"`
+	Program                string `json:"program"`
+	WindowStart            string `json:"windowStart"`
+	WindowEnd              string `json:"windowEnd"`
+	Priority               string `json:"priority"`
+	SessionsPerWeek        int    `json:"sessionsPerWeek"`
 }
 
 type Team struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	ShortName          string `json:"shortName"`
-	AgeGroupID         string `json:"ageGroupId"`
-	Color              string `json:"color"`
-	Coach              string `json:"coach"`
-	CoachPhone         string `json:"coachPhone"`
-	CoachEmail         string `json:"coachEmail"`
-	Priority           string `json:"priority"`
-	PreferredVenueID   string `json:"preferredVenueId"`
-	PreferredSurfaceID string `json:"preferredSurfaceId"`
-	PreferredFormatID  string `json:"preferredFormatId"`
-	PracticeMinutes    int    `json:"practiceMinutes"`
-	Notes              string `json:"notes"`
-	Active             bool   `json:"active"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	ShortName          string    `json:"shortName"`
+	AgeGroupID         string    `json:"ageGroupId"`
+	Color              string    `json:"color"`
+	Coach              string    `json:"coach"`
+	CoachPhone         string    `json:"coachPhone"`
+	CoachEmail         string    `json:"coachEmail"`
+	Priority           string    `json:"priority"`
+	PreferredVenueID   string    `json:"preferredVenueId"`
+	PreferredSurfaceID string    `json:"preferredSurfaceId"`
+	PreferredFormatID  string    `json:"preferredFormatId"`
+	PracticeMinutes    int       `json:"practiceMinutes"`
+	Notes              string    `json:"notes"`
+	Active             bool      `json:"active"`
+	Systems            SystemIDs `json:"systems"`
 }
 
 type Venue struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Address   string `json:"address"`
-	Notes     string `json:"notes"`
-	OpenTime  string `json:"openTime"`
-	CloseTime string `json:"closeTime"`
-	Days      []int  `json:"days"`
-	Active    bool   `json:"active"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Address   string    `json:"address"`
+	Notes     string    `json:"notes"`
+	OpenTime  string    `json:"openTime"`
+	CloseTime string    `json:"closeTime"`
+	Days      []int     `json:"days"`
+	Active    bool      `json:"active"`
+	Systems   SystemIDs `json:"systems"`
 }
 
 type Pitch struct {
-	ID          string `json:"id"`
-	VenueID     string `json:"venueId"`
-	Name        string `json:"name"`
-	Environment string `json:"environment"`
-	SurfaceID   string `json:"surfaceId"`
-	FormatID    string `json:"formatId"`
-	OpenTime    string `json:"openTime"`
-	CloseTime   string `json:"closeTime"`
-	Days        []int  `json:"days"`
-	Notes       string `json:"notes"`
-	Active      bool   `json:"active"`
+	ID          string    `json:"id"`
+	VenueID     string    `json:"venueId"`
+	Name        string    `json:"name"`
+	Environment string    `json:"environment"`
+	SurfaceID   string    `json:"surfaceId"`
+	FormatID    string    `json:"formatId"`
+	OpenTime    string    `json:"openTime"`
+	CloseTime   string    `json:"closeTime"`
+	Days        []int     `json:"days"`
+	Notes       string    `json:"notes"`
+	Active      bool      `json:"active"`
+	Systems     SystemIDs `json:"systems"`
 }
 
 type Surface struct {
@@ -197,6 +239,13 @@ func (db *Database) Normalize() {
 	db.EventTypes = nonNil(db.EventTypes)
 	db.Events = nonNil(db.Events)
 	db.Blackouts = nonNil(db.Blackouts)
+	db.ExportProfiles = nonNil(db.ExportProfiles)
+	for i := range db.AgeGroups {
+		normalizeAgeGroup(&db.AgeGroups[i])
+	}
+	for i := range db.ExportProfiles {
+		normalizeExportProfile(&db.ExportProfiles[i])
+	}
 	for i := range db.Events {
 		if db.Events[i].TeamIDs == nil {
 			db.Events[i].TeamIDs = []string{}
@@ -276,7 +325,106 @@ func (s *Settings) Normalize() {
 	}
 	s.PriorityDays = uniqueInts(s.PriorityDays)
 	s.PriorityCategories = uniqueStrings(s.PriorityCategories)
+	s.Theme = normalizeTheme(s.Theme)
 }
+
+func AuroraTheme() Theme {
+	return Theme{
+		Header:      "#171717",
+		HeaderInk:   "#ffffff",
+		Rail:        "#111111",
+		Accent:      "#29683b",
+		AccentInk:   "#ffffff",
+		Paper:       "#f4f4f4",
+		Card:        "#ffffff",
+		Ink:         "#171717",
+		Muted:       "#5e5e5e",
+		Line:        "#e0e0e0",
+		DisplayFont: "Oswald",
+		BodyFont:    "Merriweather",
+	}
+}
+
+func normalizeTheme(t Theme) Theme {
+	base := AuroraTheme()
+	t.Header = hexOr(t.Header, base.Header)
+	t.HeaderInk = hexOr(t.HeaderInk, base.HeaderInk)
+	t.Rail = hexOr(t.Rail, base.Rail)
+	t.Accent = hexOr(t.Accent, base.Accent)
+	t.AccentInk = hexOr(t.AccentInk, base.AccentInk)
+	t.Paper = hexOr(t.Paper, base.Paper)
+	t.Card = hexOr(t.Card, base.Card)
+	t.Ink = hexOr(t.Ink, base.Ink)
+	t.Muted = hexOr(t.Muted, base.Muted)
+	t.Line = hexOr(t.Line, base.Line)
+	t.DisplayFont = fontOr(t.DisplayFont, base.DisplayFont)
+	t.BodyFont = fontOr(t.BodyFont, base.BodyFont)
+	return t
+}
+
+func hexOr(value, fallback string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if len(value) != 7 || value[0] != '#' {
+		return fallback
+	}
+	for _, c := range value[1:] {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return fallback
+		}
+	}
+	return value
+}
+
+func fontOr(value, fallback string) string {
+	switch strings.TrimSpace(value) {
+	case "Oswald", "Merriweather", "Outfit", "Fraunces", "Segoe UI", "Georgia", "Arial":
+		return strings.TrimSpace(value)
+	default:
+		return fallback
+	}
+}
+
+func normalizeAgeGroup(g *AgeGroup) {
+	g.Name = strings.TrimSpace(g.Name)
+	g.Program = strings.TrimSpace(g.Program)
+	if g.Priority != "always" && g.Priority != "never" {
+		g.Priority = "auto"
+	}
+	if g.SessionsPerWeek < 0 {
+		g.SessionsPerWeek = 0
+	}
+	if g.SessionsPerWeek > 7 {
+		g.SessionsPerWeek = 7
+	}
+	ws, okS := ClockMinutes(g.WindowStart)
+	we, okE := ClockMinutes(g.WindowEnd)
+	if strings.TrimSpace(g.WindowStart) == "" || !okS {
+		g.WindowStart = ""
+	} else {
+		g.WindowStart = FormatClock(ws)
+	}
+	if strings.TrimSpace(g.WindowEnd) == "" || !okE {
+		g.WindowEnd = ""
+	} else {
+		g.WindowEnd = FormatClock(we)
+	}
+	if g.WindowStart != "" && g.WindowEnd != "" && we <= ws {
+		g.WindowStart = ""
+		g.WindowEnd = ""
+	}
+}
+
+func normalizeExportProfile(p *ExportProfile) {
+	p.Name = strings.TrimSpace(p.Name)
+	switch p.System {
+	case "ramp", "teamlinkt", "teamsnap", "gamechanger":
+	default:
+		p.System = "ramp"
+	}
+	p.Categories = uniqueStrings(p.Categories)
+}
+
+func (s SystemIDs) RampID() string { return strings.TrimSpace(s.Ramp) }
 
 func (db *Database) NewID(prefix string) string {
 	db.NextID++
@@ -300,15 +448,16 @@ type identified interface {
 	Ident() string
 }
 
-func (t Team) Ident() string      { return t.ID }
-func (v Venue) Ident() string     { return v.ID }
-func (p Pitch) Ident() string     { return p.ID }
-func (s Surface) Ident() string   { return s.ID }
-func (f Format) Ident() string    { return f.ID }
-func (a AgeGroup) Ident() string  { return a.ID }
-func (e EventType) Ident() string { return e.ID }
-func (e Event) Ident() string     { return e.ID }
-func (b Blackout) Ident() string  { return b.ID }
+func (t Team) Ident() string          { return t.ID }
+func (v Venue) Ident() string         { return v.ID }
+func (p Pitch) Ident() string         { return p.ID }
+func (s Surface) Ident() string       { return s.ID }
+func (f Format) Ident() string        { return f.ID }
+func (a AgeGroup) Ident() string      { return a.ID }
+func (e EventType) Ident() string     { return e.ID }
+func (e Event) Ident() string         { return e.ID }
+func (b Blackout) Ident() string      { return b.ID }
+func (p ExportProfile) Ident() string { return p.ID }
 
 func findByID[T identified](items []T, id string) (T, bool) {
 	for _, item := range items {
@@ -328,13 +477,36 @@ func (db *Database) TeamIsPriority(t Team) bool {
 		return true
 	case "never":
 		return false
+	}
+	ag, ok := db.FindAgeGroup(t.AgeGroupID)
+	if !ok {
+		return false
+	}
+	switch ag.Priority {
+	case "always":
+		return true
+	case "never":
+		return false
 	default:
-		ag, ok := db.FindAgeGroup(t.AgeGroupID)
-		if !ok {
-			return false
-		}
 		return ag.MaxAge < db.Settings.PriorityCutoffAge
 	}
+}
+
+// TeamWindow is the hour band this team should be offered.
+// A custom age-group window, such as Academy evenings, replaces the club early window.
+func (db *Database) TeamWindow(t Team) (start, end int, custom bool) {
+	start, _ = ClockMinutes(db.Settings.EarlyWindowStart)
+	end, _ = ClockMinutes(db.Settings.EarlyWindowEnd)
+	ag, ok := db.FindAgeGroup(t.AgeGroupID)
+	if !ok {
+		return start, end, false
+	}
+	ws, okS := ClockMinutes(ag.WindowStart)
+	we, okE := ClockMinutes(ag.WindowEnd)
+	if okS && okE && we > ws {
+		return ws, we, true
+	}
+	return start, end, false
 }
 
 func (db *Database) HasPriorityTeam(ev Event) bool {
@@ -365,12 +537,24 @@ func (db *Database) LatePriority(ev Event) bool {
 	if len(days) > 0 && !containsInt(days, int(start.Weekday())) {
 		return false
 	}
-	endMin, ok := ClockMinutes(db.Settings.EarlyWindowEnd)
-	if !ok {
+	mins := start.Hour()*60 + start.Minute()
+	limit := 0
+	found := false
+	for _, id := range ev.TeamIDs {
+		team, ok := db.FindTeam(id)
+		if !ok || !db.TeamIsPriority(team) {
+			continue
+		}
+		_, endMin, _ := db.TeamWindow(team)
+		if !found || endMin < limit {
+			limit = endMin
+			found = true
+		}
+	}
+	if !found {
 		return false
 	}
-	mins := start.Hour()*60 + start.Minute()
-	return mins >= endMin
+	return mins >= limit
 }
 
 func (db *Database) Present(ev Event) EventView {
@@ -591,6 +775,7 @@ func DefaultSettings(now time.Time) Settings {
 		BlockBlackouts:       true,
 		OlderTeamsAvoidEarly: true,
 		LegendEnabled:        true,
+		Theme:                AuroraTheme(),
 	}
 	s.Normalize()
 	return s

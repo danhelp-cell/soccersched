@@ -11,13 +11,16 @@ function adopt(data) {
   PB.state.blackouts = data.blackouts || [];
   if (data.dataDir) PB.state.dataDir = data.dataDir;
   if (data.version) PB.state.version = data.version;
+  PB.state.exportProfiles = data.exportProfiles || [];
   PB.state.initialized = !!data.initialized || !!data.settings?.initialized;
+  applyTheme(PB.state.settings?.theme);
 }
 
 function openApp() {
   document.getElementById("setup").hidden = true;
   document.getElementById("shell").hidden = false;
   document.title = `Pitchboard — ${PB.state.settings.clubName}`;
+  applyTheme(PB.state.settings?.theme);
   if (!PB.state.calendar) initCalendar();
   else applyCalendarOptions();
   renderLegend();

@@ -84,6 +84,10 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/export/xlsx", a.exportXLSX)
 	mux.HandleFunc("GET /api/export/pdf", a.exportPDF)
 	mux.HandleFunc("GET /api/export/ics", a.exportICS)
+	mux.HandleFunc("GET /api/export/system/{system}", a.exportSystem)
+	mux.HandleFunc("POST /api/export-profiles", a.createExportProfile)
+	mux.HandleFunc("PUT /api/export-profiles/{id}", a.updateExportProfile)
+	mux.HandleFunc("DELETE /api/export-profiles/{id}", a.deleteExportProfile)
 	mux.HandleFunc("GET /api/backup", a.backup)
 	mux.HandleFunc("POST /api/backup", a.restore)
 	mux.HandleFunc("POST /api/shutdown", a.shutdown)
@@ -126,18 +130,19 @@ func (a *App) health(w http.ResponseWriter, r *http.Request) {
 func (a *App) bootstrap(w http.ResponseWriter, r *http.Request) {
 	db := a.store.View()
 	a.writeJSON(w, 200, map[string]any{
-		"version":     a.version,
-		"dataDir":     a.store.Dir(),
-		"initialized": db.Settings.Initialized,
-		"settings":    db.Settings,
-		"ageGroups":   db.AgeGroups,
-		"teams":       db.Teams,
-		"venues":      db.Venues,
-		"pitches":     db.Pitches,
-		"surfaces":    db.Surfaces,
-		"formats":     db.Formats,
-		"eventTypes":  db.EventTypes,
-		"blackouts":   db.Blackouts,
+		"version":        a.version,
+		"dataDir":        a.store.Dir(),
+		"initialized":    db.Settings.Initialized,
+		"settings":       db.Settings,
+		"ageGroups":      db.AgeGroups,
+		"teams":          db.Teams,
+		"venues":         db.Venues,
+		"pitches":        db.Pitches,
+		"surfaces":       db.Surfaces,
+		"formats":        db.Formats,
+		"eventTypes":     db.EventTypes,
+		"blackouts":      db.Blackouts,
+		"exportProfiles": db.ExportProfiles,
 	})
 }
 

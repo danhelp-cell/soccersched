@@ -796,6 +796,102 @@ func (a *App) exportPDF(w http.ResponseWriter, r *http.Request) {
 	a.download(w, export.FileName(db.Settings.ClubName, "pdf", q.Start, q.End), "application/pdf", body)
 }
 
+func (a *App) exportSystem(w http.ResponseWriter, r *http.Request) {
+	system := r.PathValue("system")
+	if _, ok := export.FindSystem(system); !ok {
+		a.writeJSON(w, 404, map[string]string{"error": "That export is not available."})
+		return
+	}
+	db := a.store.View()
+	categories := splitCSV(r.URL.Query().Get("categories"))
+	label := system
+	if profileID := strings.TrimSpace(r.URL.Query().Get("profile")); profileID != "" {
+		found := false
+		for _, profile := range db.ExportProfiles {
+			if profile.ID != profileID {
+				continue
+			}
+			if _, ok := export.FindSystem(profile.System); !ok {
+				a.writeJSON(w, 400, map[string]string{"error": "That saved export uses an unknown system."})
+				return
+			}
+			system = profile.System
+			if len(profile.Categories) > 0 {
+				categories = profile.Categories
+			}
+			if profile.Name != "" {
+				label = profile.Name
+			}
+			found = true
+			break
+		}
+		if !found {
+			a.writeJSON(w, 404, map[string]string{"error": "That saved export was not found."})
+			return
+		}
+	}
+	body, skipped, err := export.SystemCSV(&db, export.Select(&db, a.query(r)), system, categories)
+	if err != nil {
+		a.writeJSON(w, 500, map[string]string{"error": "Could not build that export."})
+		return
+	}
+	notice := ""
+	if skipped > 0 {
+		noun := "rows were"
+		if skipped == 1 {
+			noun = "row was"
+		}
+		notice = fmt.Sprintf("%d %s left out. RAMP needs a numeric team id and location id. The other systems use the team and place names when an id is blank.", skipped, noun)
+	}
+	q := a.query(r)
+	a.downloadNotice(w, export.FileName(db.Settings.ClubName+" "+label, "csv", q.Start, q.End), "text/csv; charset=utf-8", body, notice)
+}
+
+func (a *App) createExportProfile(w http.ResponseWriter, r *http.Request) {
+	a.saveCatalog(w, r, "", func(db *model.Database, raw jsonRaw, id string) error {
+		var body model.ExportProfile
+		if err := jsonCopy(raw, &body); err != nil {
+			return err
+		}
+		body.Name = strings.TrimSpace(body.Name)
+		if body.Name == "" {
+			return bad("Name this export.")
+		}
+		if _, ok := export.FindSystem(body.System); !ok {
+			return bad("Choose RAMP, TeamLinkt, TeamSnap, or GameChanger.")
+		}
+		if id == "" {
+			body.ID = db.NewID("exp")
+			db.ExportProfiles = append(db.ExportProfiles, body)
+			return nil
+		}
+		for i := range db.ExportProfiles {
+			if db.ExportProfiles[i].ID == id {
+				body.ID = id
+				db.ExportProfiles[i] = body
+				return nil
+			}
+		}
+		return missing("That saved export was not found.")
+	})
+}
+
+func (a *App) updateExportProfile(w http.ResponseWriter, r *http.Request) {
+	a.createExportProfile(w, r)
+}
+
+func (a *App) deleteExportProfile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := a.store.Update(func(db *model.Database) error {
+		return dropByID(&db.ExportProfiles, id, "That saved export was not found.")
+	})
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	a.bootstrap(w, r)
+}
+
 func (a *App) exportICS(w http.ResponseWriter, r *http.Request) {
 	db := a.store.View()
 	q := a.query(r)

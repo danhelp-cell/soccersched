@@ -20,11 +20,13 @@ func PDF(db *model.Database, rows []model.EventView, from, to time.Time) ([]byte
 	if club == "" {
 		club = "Soccer club"
 	}
+	hr, hg, hb := hexRGB(db.Settings.Theme.Header, 23, 23, 23)
+	ir, ig, ib := hexRGB(db.Settings.Theme.HeaderInk, 255, 255, 255)
 	pdf.SetHeaderFunc(func() {
-		pdf.SetFillColor(23, 53, 40)
+		pdf.SetFillColor(hr, hg, hb)
 		pdf.Rect(0, 0, 216, 16, "F")
 		pdf.SetFont("DejaVu", "B", 13)
-		pdf.SetTextColor(244, 241, 234)
+		pdf.SetTextColor(ir, ig, ib)
 		pdf.SetXY(14, 4)
 		pdf.CellFormat(140, 8, "Pitchboard", "", 0, "L", false, 0, "")
 		pdf.SetFont("DejaVu", "", 10)
@@ -106,6 +108,18 @@ func PDF(db *model.Database, rows []model.EventView, from, to time.Time) ([]byte
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func hexRGB(value string, r, g, b int) (int, int, int) {
+	value = strings.TrimSpace(value)
+	if len(value) != 7 || value[0] != '#' {
+		return r, g, b
+	}
+	var rr, gg, bb int
+	if _, err := fmt.Sscanf(value, "#%02x%02x%02x", &rr, &gg, &bb); err != nil {
+		return r, g, b
+	}
+	return rr, gg, bb
 }
 
 func pretty(clock, format string) string {

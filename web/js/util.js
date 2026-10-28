@@ -9,6 +9,7 @@ const PB = {
     formats: [],
     eventTypes: [],
     blackouts: [],
+    exportProfiles: [],
     events: [],
     summary: [],
     view: "calendar",
@@ -89,7 +90,26 @@ function isPriorityTeam(team) {
   if (team.priority === "always") return true;
   if (team.priority === "never") return false;
   const group = ageById(team.ageGroupId);
-  return !!group && group.maxAge < (PB.state.settings?.priorityCutoffAge ?? 11);
+  if (!group) return false;
+  if (group.priority === "always") return true;
+  if (group.priority === "never") return false;
+  return group.maxAge < (PB.state.settings?.priorityCutoffAge ?? 11);
+}
+
+function teamWindowEnd(team) {
+  const settings = PB.state.settings || {};
+  const group = ageById(team?.ageGroupId);
+  if (group?.windowStart && group?.windowEnd) {
+    const start = minutesOf(group.windowStart);
+    const end = minutesOf(group.windowEnd);
+    if (end > start) return end;
+  }
+  return minutesOf(settings.earlyWindowEnd || "17:30");
+}
+
+function minutesOf(value) {
+  const [h, m] = String(value || "0:00").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
 }
 
 function isLateForm(form) {
@@ -103,8 +123,49 @@ function isLateForm(form) {
   const start = parseLocal(form.start);
   const days = settings.priorityDays || [];
   if (days.length && !days.includes(start.getDay())) return false;
-  const [h, m] = String(settings.earlyWindowEnd || "17:30").split(":").map(Number);
-  return start.getHours() * 60 + start.getMinutes() >= h * 60 + (m || 0);
+  const priority = teams.filter(isPriorityTeam);
+  const limit = Math.min(...priority.map(teamWindowEnd));
+  return start.getHours() * 60 + start.getMinutes() >= limit;
+}
+
+const themeFonts = ["Oswald", "Merriweather", "Outfit", "Fraunces", "Segoe UI", "Georgia", "Arial"];
+
+function fontStack(name) {
+  switch (name) {
+    case "Oswald": return '"Oswald", "Arial Narrow", sans-serif';
+    case "Merriweather": return '"Merriweather", Georgia, serif';
+    case "Outfit": return '"Outfit", "Segoe UI", sans-serif';
+    case "Fraunces": return '"Fraunces", Georgia, serif';
+    case "Georgia": return "Georgia, serif";
+    case "Arial": return "Arial, sans-serif";
+    default: return '"Segoe UI", sans-serif';
+  }
+}
+
+function applyTheme(theme) {
+  const t = theme || {};
+  const root = document.documentElement;
+  const set = (key, value) => { if (value) root.style.setProperty(key, value); };
+  set("--ink", t.ink);
+  set("--muted", t.muted);
+  set("--line", t.line);
+  set("--paper", t.paper);
+  set("--card", t.card);
+  set("--header", t.header);
+  set("--header-ink", t.headerInk);
+  set("--rail", t.rail);
+  set("--accent", t.accent);
+  set("--accent-ink", t.accentInk);
+  if (t.displayFont) root.style.setProperty("--display", fontStack(t.displayFont));
+  if (t.bodyFont) root.style.setProperty("--body", fontStack(t.bodyFont));
+}
+
+function auroraTheme() {
+  return {
+    header: "#171717", headerInk: "#ffffff", rail: "#111111", accent: "#29683b", accentInk: "#ffffff",
+    paper: "#f4f4f4", card: "#ffffff", ink: "#171717", muted: "#5e5e5e", line: "#e0e0e0",
+    displayFont: "Oswald", bodyFont: "Merriweather",
+  };
 }
 
 function tint(hex, amount) {

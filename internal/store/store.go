@@ -43,6 +43,8 @@ func Open(dataDir string) (*Store, error) {
 		return nil, errors.New("this data file was written by a newer Pitchboard")
 	}
 	s.db.Normalize()
+	EnsureCatalogs(&s.db)
+	s.db.Normalize()
 	return s, nil
 }
 

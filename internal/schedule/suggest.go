@@ -247,6 +247,17 @@ func blocked(db *model.Database, ev model.Event, busy []model.Event) bool {
 }
 
 func timeScore(db *model.Database, team model.Team, p pattern) int {
+	if ws, we, custom := db.TeamWindow(team); custom {
+		score := 0
+		if p.startMin >= ws && p.startMin < we {
+			score = 20000 + (we - p.startMin)
+		} else if p.startMin < ws {
+			score = 3000 - (ws - p.startMin)
+		} else {
+			score = 1000 - (p.startMin - we)
+		}
+		return score + pitchScore(db, team, p)
+	}
 	earlyEnd, _ := model.ClockMinutes(db.Settings.EarlyWindowEnd)
 	score := 0
 	if db.TeamIsPriority(team) {
@@ -264,6 +275,20 @@ func timeScore(db *model.Database, team model.Team, p pattern) int {
 	} else {
 		score = 20000 - p.startMin
 	}
+	if want := preferredFormat(db, team); want != "" && p.pitch.FormatID == want {
+		score += 500
+	}
+	if team.PreferredSurfaceID != "" && p.pitch.SurfaceID == team.PreferredSurfaceID {
+		score += 120
+	}
+	if team.PreferredVenueID != "" && p.pitch.VenueID == team.PreferredVenueID {
+		score += 180
+	}
+	return score
+}
+
+func pitchScore(db *model.Database, team model.Team, p pattern) int {
+	score := 0
 	if want := preferredFormat(db, team); want != "" && p.pitch.FormatID == want {
 		score += 500
 	}

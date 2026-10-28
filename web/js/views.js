@@ -44,7 +44,7 @@ function renderLegend() {
   const host = document.getElementById("legend");
   if (!settings?.legendEnabled) { host.textContent = ""; return; }
   const early = `${clockLabel(settings.earlyWindowStart, settings.timeFormat)}–${clockLabel(settings.earlyWindowEnd, settings.timeFormat)}`;
-  host.innerHTML = `Bright hours (${esc(early)}) are booked first for players under ${esc(settings.priorityCutoffAge)}. A dashed outline means a young team starts after that.`;
+  host.innerHTML = `Bright hours (${esc(early)}) are booked first for players under ${esc(settings.priorityCutoffAge)}. An age group can set its own hours, such as Academy evenings. A dashed outline means a priority team starts after its window.`;
 }
 
 function ensureSidebar() {
@@ -123,7 +123,7 @@ function renderTeamList() {
       html += `<div class="team-chip" data-id="${esc(team.id)}">
         <input type="checkbox" ${hidden ? "" : "checked"} data-hide="${esc(team.id)}" aria-label="Show ${esc(team.name)}" />
         <span class="swatch" style="background:${esc(team.color || "#2f6a4a")}"></span>
-        <span><span class="t-name">${esc(team.shortName || team.name)}</span><div class="t-meta">${esc(ageById(team.ageGroupId)?.name || "")}${isPriorityTeam(team) ? " · Early" : ""}</div></span>
+        <span><span class="t-name">${esc(team.shortName || team.name)}</span><div class="t-meta">${esc(teamMeta(team))}</div></span>
       </div>`;
     }
   }
@@ -252,7 +252,9 @@ function renderLateBox() {
   const host = document.querySelector("#late-box");
   if (!host || !form) return;
   if (!isLateForm(form)) { host.innerHTML = ""; return; }
-  const end = clockLabel(PB.state.settings.earlyWindowEnd, PB.state.settings.timeFormat);
+  const teams = (form.teamIds || []).map(teamById).filter(isPriorityTeam);
+  const limit = teams.length ? Math.min(...teams.map(teamWindowEnd)) : minutesOf(PB.state.settings.earlyWindowEnd || "17:30");
+  const end = clockLabel(`${pad(Math.floor(limit / 60))}:${pad(limit % 60)}`, PB.state.settings.timeFormat);
   host.innerHTML = `<div class="issue">This starts after ${esc(end)}. Players under ${esc(PB.state.settings.priorityCutoffAge)} are supposed to have the earlier hours.${PB.state.settings.priorityMode === "strict" ? `<label style="display:block;margin-top:6px"><input type="checkbox" name="acknowledgeLate" ${form.acknowledgeLate ? "checked" : ""}/> Schedule this later anyway</label>` : ""}</div><button type="button" class="btn-ghost" id="find-earlier">Find an earlier time</button>`;
   const button = host.querySelector("#find-earlier");
   if (button) button.onclick = findEarlier;
@@ -419,7 +421,7 @@ function renderSetup() {
     <p>Practices, camps, and games stay on this computer. Players under the cutoff get the earlier hours before older teams are placed.</p>
     <form id="setup-form">
       <div class="row">
-        <label class="field"><span>Club name</span><input name="clubName" required value="${esc(settings.clubName || "")}" placeholder="Northfield Soccer Club" /></label>
+        <label class="field"><span>Club name</span><input name="clubName" required value="${esc(settings.clubName || "Aurora Soccer Club")}" placeholder="Aurora Soccer Club" /></label>
         <label class="field"><span>Season</span><input name="seasonName" value="${esc(settings.seasonName || "")}" /></label>
       </div>
       <div class="row">
@@ -433,7 +435,7 @@ function renderSetup() {
       <label class="field"><span>If a young team is booked later</span><select name="priorityMode"><option value="warn">Allow it and mark it</option><option value="strict">Ask before saving</option></select></label>
       <p class="muted" id="priority-preview">Early priority right now: ${esc(early.join(", ") || "none yet")}.</p>
       <div class="choice">
-        <button type="submit" data-sample="1"><strong>Start with the sample club</strong><span class="muted">Northfield’s week, with indoor turf, hardcourt, a gym, grass, and outdoor turf. One U8 practice is late so you can see the warning.</span></button>
+        <button type="submit" data-sample="1"><strong>Start with the Aurora sample</strong><span class="muted">Aurora Soccer Club’s week across SaskTel, Henk Ruys, and Forest Park. Several teams share each age group, Academy has its own evening hours, and one U8 practice is late so you can see the warning.</span></button>
         <button type="submit" data-sample="0"><strong>Start with an empty club</strong><span class="muted">Age groups and surfaces are ready. Add your own teams and pitches.</span></button>
       </div>
     </form>
@@ -459,7 +461,7 @@ function renderTeams() {
   const editor = page.querySelector("#team-editor");
   if (!editing) editor.innerHTML = `<p class="muted">Select a team to edit it.</p>`;
   else editor.innerHTML = teamEditor(editing);
-  page.querySelector("#team-table").innerHTML = PB.state.teams.map((team) => `<button type="button" class="list-btn" data-team="${esc(team.id)}"><span class="swatch" style="background:${esc(team.color || "#888")};display:inline-block"></span> ${esc(team.name)} <span class="muted">${esc(ageById(team.ageGroupId)?.name || "")}${isPriorityTeam(team) ? " · Early" : ""}</span></button>`).join("") || `<p>No teams yet.</p>`;
+  page.querySelector("#team-table").innerHTML = PB.state.teams.map((team) => `<button type="button" class="list-btn" data-team="${esc(team.id)}"><span class="swatch" style="background:${esc(team.color || "#888")};display:inline-block"></span> ${esc(team.name)} <span class="muted">${esc(teamMeta(team))}</span></button>`).join("") || `<p>No teams yet.</p>`;
   page.querySelectorAll("[data-team]").forEach((button) => button.onclick = () => { PB.state.teamDraft = { ...teamById(button.dataset.team) }; renderTeams(); });
   const form = page.querySelector("#team-form");
   if (form) {
@@ -493,6 +495,16 @@ function teamEditor(team) {
       <label class="field"><span>Preferred surface</span><select name="preferredSurfaceId"><option value="">Any</option>${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${surface.id === team.preferredSurfaceId ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}</select></label>
     </div>
     <label class="field"><span>Notes</span><textarea name="notes">${esc(team.notes || "")}</textarea></label>
+    <h3>Online systems</h3>
+    <p class="muted">RAMP InterActive needs the numeric team id from your RAMP team list. TeamLinkt, TeamSnap, and GameChanger can use a different name when it does not match the name above.</p>
+    <div class="row">
+      <label class="field"><span>RAMP team id</span><input name="ramp" value="${esc(team.systems?.ramp || "")}" inputmode="numeric" /></label>
+      <label class="field"><span>TeamLinkt name</span><input name="teamlinkt" value="${esc(team.systems?.teamlinkt || "")}" /></label>
+    </div>
+    <div class="row">
+      <label class="field"><span>TeamSnap name</span><input name="teamsnap" value="${esc(team.systems?.teamsnap || "")}" /></label>
+      <label class="field"><span>GameChanger name</span><input name="gamechanger" value="${esc(team.systems?.gamechanger || "")}" /></label>
+    </div>
     <label><input type="checkbox" name="active" ${team.active !== false ? "checked" : ""}/> Active</label>
     <div class="row" style="margin-top:10px"><button class="btn" type="submit">Save team</button><button class="btn-ghost" id="delete-team" type="button">${team.id ? "Delete" : "Cancel"}</button></div>
   </form>`;
@@ -501,7 +513,7 @@ function teamEditor(team) {
 async function saveTeamForm(event) {
   event.preventDefault();
   const data = new FormData(event.target);
-  const body = { ...PB.state.teamDraft, name: data.get("name"), shortName: data.get("shortName"), ageGroupId: data.get("ageGroupId"), priority: data.get("priority"), coach: data.get("coach"), coachPhone: data.get("coachPhone"), coachEmail: data.get("coachEmail"), color: data.get("color"), preferredVenueId: data.get("preferredVenueId"), preferredSurfaceId: data.get("preferredSurfaceId"), notes: data.get("notes"), active: data.get("active") === "on" };
+  const body = { ...PB.state.teamDraft, name: data.get("name"), shortName: data.get("shortName"), ageGroupId: data.get("ageGroupId"), priority: data.get("priority"), coach: data.get("coach"), coachPhone: data.get("coachPhone"), coachEmail: data.get("coachEmail"), color: data.get("color"), preferredVenueId: data.get("preferredVenueId"), preferredSurfaceId: data.get("preferredSurfaceId"), notes: data.get("notes"), active: data.get("active") === "on", systems: { ramp: data.get("ramp") || "", teamlinkt: data.get("teamlinkt") || "", teamsnap: data.get("teamsnap") || "", gamechanger: data.get("gamechanger") || "" } };
   try {
     adopt(await API.saveTeam(body));
     PB.state.teamDraft = null;
@@ -552,6 +564,12 @@ function venueFields(venue) {
     <div class="row"><label class="field"><span>Opens</span><input name="openTime" type="time" value="${esc(venue.openTime || "08:00")}" /></label><label class="field"><span>Closes</span><input name="closeTime" type="time" value="${esc(venue.closeTime || "22:00")}" /></label></div>
     <div class="field"><span>Days open</span><div class="checks">${dayNames().map((name, index) => `<label><input type="checkbox" name="day" value="${index}" ${(venue.days || []).includes(index) ? "checked" : ""}/> ${name}</label>`).join("")}</div></div>
     <label class="field"><span>Notes</span><textarea name="notes">${esc(venue.notes || "")}</textarea></label>
+    <h3>Online systems</h3>
+    <p class="muted">RAMP location id is the numeric id of the arena or field. A pitch can override it. TeamLinkt uses this name when it differs from the location name.</p>
+    <div class="row">
+      <label class="field"><span>RAMP location id</span><input name="ramp" value="${esc(venue.systems?.ramp || "")}" inputmode="numeric" /></label>
+      <label class="field"><span>TeamLinkt location</span><input name="teamlinkt" value="${esc(venue.systems?.teamlinkt || "")}" /></label>
+    </div>
     <label><input type="checkbox" name="active" ${venue.active !== false ? "checked" : ""}/> Active</label>`;
 }
 
@@ -561,20 +579,21 @@ function pitchFields(pitch) {
     <div class="row"><label class="field"><span>Surface</span><select name="surfaceId">${PB.state.surfaces.map((surface) => `<option value="${esc(surface.id)}" ${surface.id === pitch.surfaceId ? "selected" : ""}>${esc(surface.name)}</option>`).join("")}</select></label>
     <label class="field"><span>Pitch type</span><select name="formatId">${PB.state.formats.map((format) => `<option value="${esc(format.id)}" ${format.id === pitch.formatId ? "selected" : ""}>${esc(format.name)}</option>`).join("")}</select></label></div>
     <label class="field"><span>Notes</span><textarea name="notes">${esc(pitch.notes || "")}</textarea></label>
+    <label class="field"><span>RAMP location id</span><input name="ramp" value="${esc(pitch.systems?.ramp || "")}" inputmode="numeric" placeholder="Leave blank to use the location id" /></label>
     <label><input type="checkbox" name="active" ${pitch.active !== false ? "checked" : ""}/> Active</label>`;
 }
 
 async function saveVenueForm(event) {
   event.preventDefault();
   const data = new FormData(event.target);
-  const body = { ...PB.state.venueDraft, name: data.get("name"), address: data.get("address"), openTime: data.get("openTime"), closeTime: data.get("closeTime"), notes: data.get("notes"), days: [...event.target.querySelectorAll("[name=day]:checked")].map((box) => Number(box.value)), active: data.get("active") === "on" };
+  const body = { ...PB.state.venueDraft, name: data.get("name"), address: data.get("address"), openTime: data.get("openTime"), closeTime: data.get("closeTime"), notes: data.get("notes"), days: [...event.target.querySelectorAll("[name=day]:checked")].map((box) => Number(box.value)), active: data.get("active") === "on", systems: { ...(PB.state.venueDraft.systems || {}), ramp: data.get("ramp") || "", teamlinkt: data.get("teamlinkt") || "" } };
   try { adopt(await API.saveVenue(body)); PB.state.venueDraft = null; toast("Location saved."); renderPlaces(); } catch (err) { toast(errorText(err)); }
 }
 
 async function savePitchForm(event) {
   event.preventDefault();
   const data = new FormData(event.target);
-  const body = { ...PB.state.pitchDraft, name: data.get("name"), environment: data.get("environment"), surfaceId: data.get("surfaceId"), formatId: data.get("formatId"), notes: data.get("notes"), active: data.get("active") === "on" };
+  const body = { ...PB.state.pitchDraft, name: data.get("name"), environment: data.get("environment"), surfaceId: data.get("surfaceId"), formatId: data.get("formatId"), notes: data.get("notes"), active: data.get("active") === "on", systems: { ...(PB.state.pitchDraft.systems || {}), ramp: data.get("ramp") || "" } };
   try { adopt(await API.savePitch(body)); PB.state.pitchDraft = null; toast("Pitch saved."); renderPlaces(); } catch (err) { toast(errorText(err)); }
 }
 
@@ -583,7 +602,7 @@ function renderPlan() {
   const start = PB.state.rangeStart ? ymd(PB.state.rangeStart) : ymd(new Date());
   const endDefault = PB.state.settings.seasonEnd || ymd(new Date(Date.now() + 56 * 86400000));
   page.innerHTML = `<h1>Plan the week</h1>
-    <p>Younger teams are placed first, as early as the pitches allow. Older teams fill in after ${esc(clockLabel(PB.state.settings.earlyWindowEnd, PB.state.settings.timeFormat))} when they can.</p>
+    <p>Younger teams are placed first, as early as the pitches allow. Older teams fill in after ${esc(clockLabel(PB.state.settings.earlyWindowEnd, PB.state.settings.timeFormat))} when they can. An age group with its own hours, such as Academy, is placed inside that window instead.</p>
     <form id="plan-form" class="card">
       <div class="field"><span>Teams</span><div class="checks">${PB.state.teams.filter((team) => team.active !== false).map((team) => `<label><input type="checkbox" name="team" value="${esc(team.id)}" ${isPriorityTeam(team) ? "checked" : ""}/> ${esc(team.shortName || team.name)}</label>`).join("")}</div></div>
       <div class="row">
@@ -679,8 +698,28 @@ function renderSettings() {
   const settings = PB.state.settings;
   const page = document.getElementById("page");
   const early = PB.state.ageGroups.filter((group) => group.maxAge < settings.priorityCutoffAge).map((group) => group.name);
+  const theme = settings.theme || auroraTheme();
   page.innerHTML = `<h1>Settings</h1>
     <form id="settings-form" class="card">
+      <h2>Look</h2>
+      <p class="muted">Aurora Soccer is the starting point: black, green, Oswald, and Merriweather, taken from aurorasoccer.ca. Change any of it for another club.</p>
+      <div class="swatches">
+        ${themeField("Header", "header", theme.header)}
+        ${themeField("Header text", "headerInk", theme.headerInk)}
+        ${themeField("Side rail", "rail", theme.rail)}
+        ${themeField("Accent", "accent", theme.accent)}
+        ${themeField("Accent text", "accentInk", theme.accentInk)}
+        ${themeField("Page", "paper", theme.paper)}
+        ${themeField("Cards", "card", theme.card)}
+        ${themeField("Text", "ink", theme.ink)}
+        ${themeField("Muted text", "muted", theme.muted)}
+        ${themeField("Lines", "line", theme.line)}
+      </div>
+      <div class="row">
+        <label class="field"><span>Headings</span><select name="displayFont">${themeFonts.map((font) => `<option ${theme.displayFont === font ? "selected" : ""}>${esc(font)}</option>`).join("")}</select></label>
+        <label class="field"><span>Body</span><select name="bodyFont">${themeFonts.map((font) => `<option ${theme.bodyFont === font ? "selected" : ""}>${esc(font)}</option>`).join("")}</select></label>
+      </div>
+      <button type="button" class="btn-ghost" id="aurora-theme">Use Aurora colours</button>
       <h2>Club</h2>
       <div class="row"><label class="field"><span>Name</span><input name="clubName" value="${esc(settings.clubName)}" /></label><label class="field"><span>Season</span><input name="seasonName" value="${esc(settings.seasonName)}" /></label></div>
       <div class="row"><label class="field"><span>Starts</span><input type="date" name="seasonStart" value="${esc(settings.seasonStart)}" /></label><label class="field"><span>Ends</span><input type="date" name="seasonEnd" value="${esc(settings.seasonEnd)}" /></label><label class="field"><span>Time label</span><input name="timezoneLabel" value="${esc(settings.timezoneLabel)}" /></label></div>
@@ -706,7 +745,7 @@ function renderSettings() {
       <label class="field"><span>When someone books a young team later</span><select name="priorityMode"><option value="warn" ${settings.priorityMode !== "strict" ? "selected" : ""}>Allow it and mark it</option><option value="strict" ${settings.priorityMode === "strict" ? "selected" : ""}>Require confirmation</option></select></label>
       <div class="field"><span>Rule applies on</span><div class="checks">${dayNames().map((name, index) => `<label><input type="checkbox" name="priorityDay" value="${index}" ${(settings.priorityDays || []).includes(index) ? "checked" : ""}/> ${name}</label>`).join("")}</div></div>
       <div class="field"><span>And for</span><div class="checks">${["practice", "camp", "game", "other"].map((cat) => `<label><input type="checkbox" name="priorityCat" value="${cat}" ${(settings.priorityCategories || []).includes(cat) ? "checked" : ""}/> ${cat}</label>`).join("")}</div></div>
-      <p>Early priority with these ages: <strong>${esc(early.join(", ") || "nobody")}</strong></p>
+      <p>Early priority with these ages: <strong>${esc(early.join(", ") || "nobody")}</strong>. An age group can turn that on or off, or set its own hours, such as Academy evenings.</p>
       <label><input type="checkbox" name="olderTeamsAvoidEarly" ${settings.olderTeamsAvoidEarly ? "checked" : ""}/> When planning, keep older teams out of the early window if a later pitch is free</label><br/>
       <label><input type="checkbox" name="legendEnabled" ${settings.legendEnabled ? "checked" : ""}/> Show the early-window note on the calendar</label>
       <h2>Conflicts</h2>
@@ -716,7 +755,8 @@ function renderSettings() {
       <label><input type="checkbox" name="blockBlackouts" ${settings.blockBlackouts ? "checked" : ""}/> Refuse bookings on closure dates</label>
       <div style="margin-top:12px"><button class="btn" type="submit">Save settings</button></div>
     </form>
-    <div class="card"><h2>Age groups</h2><div id="age-editor"></div><button type="button" class="btn-ghost" id="add-age">Add age group</button></div>
+    <div class="card"><h2>Age groups</h2><p class="muted">Several teams can share one group. Set a program such as Development, City Rec, Alliance, or Academy, and optional hours that the planner will prefer for every team in the group.</p><div id="age-editor"></div><button type="button" class="btn-ghost" id="add-age">Add age group</button></div>
+    <div class="card"><h2>Exports to other systems</h2><p class="muted">RAMP InterActive, TeamLinkt, TeamSnap, and GameChanger each get a file in the shape that system asks for. A saved export can limit which kinds of bookings are included. Put RAMP’s numeric ids on each team and location.</p><div id="export-editor"></div><button type="button" class="btn-ghost" id="add-export">Save an export</button></div>
     <div class="card"><h2>Surfaces</h2><div id="surface-editor"></div><button type="button" class="btn-ghost" id="add-surface">Add surface</button></div>
     <div class="card"><h2>Pitch types</h2><div id="format-editor"></div><button type="button" class="btn-ghost" id="add-format">Add pitch type</button></div>
     <div class="card"><h2>Event types</h2><div id="type-editor"></div><button type="button" class="btn-ghost" id="add-type">Add type</button></div>
@@ -730,8 +770,20 @@ function renderSettings() {
       <button type="button" class="btn-ghost" id="exit-app">Exit Pitchboard</button>
     </div>`;
   page.querySelector("#settings-form").onsubmit = saveSettingsForm;
-  drawAges(); drawSurfaces(); drawFormats(); drawTypes(); drawBlackouts();
-  page.querySelector("#add-age").onclick = async () => { try { adopt(await API.saveAge({ name: "New group", minAge: 8, maxAge: 9, preferredFormatId: PB.state.formats[0]?.id || "", defaultPracticeMinutes: 60, defaultGameMinutes: 60, sortOrder: PB.state.ageGroups.length + 1 })); drawAges(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#aurora-theme").onclick = () => {
+    const theme = auroraTheme();
+    applyTheme(theme);
+    Object.entries(theme).forEach(([key, value]) => {
+      const input = page.querySelector(`[name="${key}"]`);
+      if (input) input.value = value;
+    });
+  };
+  page.querySelectorAll(".swatches input, [name=displayFont], [name=bodyFont]").forEach((input) => {
+    input.addEventListener("input", () => applyTheme(readTheme(page)));
+  });
+  drawAges(); drawExports(); drawSurfaces(); drawFormats(); drawTypes(); drawBlackouts();
+  page.querySelector("#add-age").onclick = async () => { try { adopt(await API.saveAge({ name: "New group", minAge: 8, maxAge: 9, preferredFormatId: PB.state.formats[0]?.id || "", defaultPracticeMinutes: 60, defaultGameMinutes: 60, sortOrder: PB.state.ageGroups.length + 1, program: "", priority: "auto", sessionsPerWeek: 1 })); drawAges(); } catch (err) { toast(errorText(err)); } };
+  page.querySelector("#add-export").onclick = async () => { try { adopt(await API.saveExportProfile({ name: "RAMP practices", system: "ramp", categories: ["practice"] })); drawExports(); } catch (err) { toast(errorText(err)); } };
   page.querySelector("#add-surface").onclick = async () => { try { adopt(await API.saveSurface({ name: "New surface", environment: "outdoor" })); drawSurfaces(); } catch (err) { toast(errorText(err)); } };
   page.querySelector("#add-format").onclick = async () => { try { adopt(await API.saveFormat({ name: "New type", sort: PB.state.formats.length + 1 })); drawFormats(); } catch (err) { toast(errorText(err)); } };
   page.querySelector("#add-type").onclick = async () => { try { adopt(await API.saveType({ name: "Scrimmage", category: "other", color: "#8a4b2f", defaultMinutes: 60 })); drawTypes(); } catch (err) { toast(errorText(err)); } };
@@ -769,6 +821,7 @@ async function saveSettingsForm(event) {
     priorityCategories: [...event.target.querySelectorAll("[name=priorityCat]:checked")].map((box) => box.value),
     olderTeamsAvoidEarly: on("olderTeamsAvoidEarly"),
     legendEnabled: on("legendEnabled"),
+    theme: readTheme(event.target),
     blockPitchConflicts: on("blockPitchConflicts"),
     blockTeamConflicts: on("blockTeamConflicts"),
     warnCoachConflicts: on("warnCoachConflicts"),
@@ -777,6 +830,7 @@ async function saveSettingsForm(event) {
   try {
     const saved = await API.saveSettings(next);
     PB.state.settings = saved.settings;
+    applyTheme(saved.settings.theme);
     applyCalendarOptions();
     renderLegend();
     toast("Settings saved.");
@@ -784,16 +838,59 @@ async function saveSettingsForm(event) {
   } catch (err) { toast(errorText(err)); }
 }
 
+function themeField(label, name, value) {
+  return `<label class="field"><span>${esc(label)}</span><input name="${name}" type="color" value="${esc(value || "#171717")}" /></label>`;
+}
+
+function readTheme(root) {
+  const value = (name) => root.querySelector(`[name="${name}"]`)?.value || "";
+  return {
+    header: value("header"), headerInk: value("headerInk"), rail: value("rail"), accent: value("accent"), accentInk: value("accentInk"),
+    paper: value("paper"), card: value("card"), ink: value("ink"), muted: value("muted"), line: value("line"),
+    displayFont: value("displayFont"), bodyFont: value("bodyFont"),
+  };
+}
+
+function teamMeta(team) {
+  const group = ageById(team.ageGroupId);
+  const bits = [];
+  if (group?.name) bits.push(group.name);
+  if (group?.program) bits.push(group.program);
+  if (group?.windowStart && group?.windowEnd) bits.push(`${clockLabel(group.windowStart, PB.state.settings?.timeFormat)}–${clockLabel(group.windowEnd, PB.state.settings?.timeFormat)}`);
+  else if (isPriorityTeam(team)) bits.push("Early");
+  return bits.join(" · ");
+}
+
 function drawAges() {
   const host = document.getElementById("age-editor");
   if (!host) return;
-  host.innerHTML = PB.state.ageGroups.map((group) => `<div class="row" data-age="${esc(group.id)}">
-    <input data-k="name" value="${esc(group.name)}" />
-    <input data-k="minAge" type="number" value="${group.minAge}" />
-    <input data-k="maxAge" type="number" value="${group.maxAge}" />
-    <input data-k="defaultPracticeMinutes" type="number" value="${group.defaultPracticeMinutes}" />
-    <button type="button" data-save>Save</button><button type="button" data-del>Delete</button>
-  </div>`).join("");
+  const formats = PB.state.formats || [];
+  host.innerHTML = PB.state.ageGroups.map((group) => {
+    const count = PB.state.teams.filter((team) => team.ageGroupId === group.id).length;
+    return `<div class="age-card" data-age="${esc(group.id)}">
+      <div class="row">
+        <label class="field"><span>Name</span><input data-k="name" value="${esc(group.name)}" /></label>
+        <label class="field"><span>Program</span><input data-k="program" value="${esc(group.program || "")}" placeholder="Academy, Development, City Rec" /></label>
+        <label class="field"><span>Teams</span><input value="${count}" disabled /></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Youngest</span><input data-k="minAge" type="number" value="${group.minAge}" /></label>
+        <label class="field"><span>Oldest</span><input data-k="maxAge" type="number" value="${group.maxAge}" /></label>
+        <label class="field"><span>Practice minutes</span><input data-k="defaultPracticeMinutes" type="number" value="${group.defaultPracticeMinutes}" /></label>
+        <label class="field"><span>Game minutes</span><input data-k="defaultGameMinutes" type="number" value="${group.defaultGameMinutes || 0}" /></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Hours from</span><input data-k="windowStart" type="time" value="${esc(group.windowStart || "")}" /></label>
+        <label class="field"><span>Hours until</span><input data-k="windowEnd" type="time" value="${esc(group.windowEnd || "")}" /></label>
+        <label class="field"><span>Sessions a week</span><input data-k="sessionsPerWeek" type="number" min="0" max="7" value="${group.sessionsPerWeek || 0}" /></label>
+        <label class="field"><span>Early hours</span><select data-k="priority"><option value="auto" ${group.priority !== "always" && group.priority !== "never" ? "selected" : ""}>Use the age cutoff</option><option value="always" ${group.priority === "always" ? "selected" : ""}>Always</option><option value="never" ${group.priority === "never" ? "selected" : ""}>Never</option></select></label>
+      </div>
+      <div class="row">
+        <label class="field"><span>Pitch size</span><select data-k="preferredFormatId"><option value="">Any</option>${formats.map((format) => `<option value="${esc(format.id)}" ${format.id === group.preferredFormatId ? "selected" : ""}>${esc(format.name)}</option>`).join("")}</select></label>
+        <div class="field"><span>&nbsp;</span><div class="row"><button type="button" data-save>Save</button><button type="button" class="btn-ghost" data-del>Delete</button></div></div>
+      </div>
+    </div>`;
+  }).join("");
   host.querySelectorAll("[data-age]").forEach((row) => {
     row.querySelector("[data-save]").onclick = async () => {
       const group = { ...ageById(row.dataset.age) };
@@ -802,6 +899,32 @@ function drawAges() {
     };
     row.querySelector("[data-del]").onclick = async () => {
       try { adopt(await API.deleteAge(row.dataset.age)); drawAges(); } catch (err) { toast(errorText(err)); }
+    };
+  });
+}
+
+function drawExports() {
+  const host = document.getElementById("export-editor");
+  if (!host) return;
+  const systems = [["ramp", "RAMP InterActive"], ["teamlinkt", "TeamLinkt"], ["teamsnap", "TeamSnap"], ["gamechanger", "GameChanger"]];
+  const cats = ["practice", "camp", "game", "other"];
+  const saved = PB.state.exportProfiles || [];
+  host.innerHTML = `<p><strong>Built in:</strong> RAMP practices (Team_ID, Event_Type, Start_Date, Start_Time, End_Time, Location_ID, Notes), TeamLinkt events, the TeamSnap schedule template, and a GameChanger organization file.</p>` + (saved.map((profile) => `<div class="age-card" data-id="${esc(profile.id)}">
+      <div class="row">
+        <label class="field"><span>Name</span><input data-k="name" value="${esc(profile.name)}" /></label>
+        <label class="field"><span>System</span><select data-k="system">${systems.map(([id, label]) => `<option value="${id}" ${profile.system === id ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      </div>
+      <div class="field"><span>Include</span><div class="checks">${cats.map((cat) => `<label><input type="checkbox" data-cat="${cat}" ${(profile.categories || []).includes(cat) ? "checked" : ""}/> ${cat}</label>`).join("")}</div></div>
+      <div class="row"><button type="button" data-save>Save</button><button type="button" class="btn-ghost" data-del>Delete</button></div>
+    </div>`).join("") || `<p class="muted">No saved exports yet. The Export button already offers each system.</p>`);
+  host.querySelectorAll("[data-id]").forEach((row) => {
+    row.querySelector("[data-save]").onclick = async () => {
+      const current = (PB.state.exportProfiles || []).find((item) => item.id === row.dataset.id) || {};
+      const body = { ...current, name: row.querySelector("[data-k=name]").value, system: row.querySelector("[data-k=system]").value, categories: [...row.querySelectorAll("[data-cat]:checked")].map((box) => box.dataset.cat) };
+      try { adopt(await API.saveExportProfile(body)); toast("Export saved."); } catch (err) { toast(errorText(err)); }
+    };
+    row.querySelector("[data-del]").onclick = async () => {
+      try { adopt(await API.deleteExportProfile(row.dataset.id)); drawExports(); } catch (err) { toast(errorText(err)); }
     };
   });
 }
@@ -851,15 +974,26 @@ function openExport() {
   const start = PB.state.rangeStart ? ymd(PB.state.rangeStart) : (PB.state.settings.seasonStart || ymd(new Date()));
   const end = PB.state.rangeEnd ? ymd(new Date(PB.state.rangeEnd.getTime() - 86400000)) : (PB.state.settings.seasonEnd || start);
   const root = document.getElementById("modal-root");
-  root.innerHTML = `<div class="modal-back"><form class="modal" id="export-form"><h2>Export</h2>
+  const profiles = PB.state.exportProfiles || [];
+  root.innerHTML = `<div class="modal-back"><form class="modal wide" id="export-form"><h2>Export</h2>
     <div class="row"><label class="field"><span>From</span><input name="start" type="date" value="${esc(start)}" /></label><label class="field"><span>Through</span><input name="end" type="date" value="${esc(end)}" /></label></div>
     <label><input type="checkbox" name="cancelled" /> Include cancelled</label>
-    <div class="row" style="margin-top:12px">
+    <h3>Files</h3>
+    <div class="row" style="margin-top:8px">
       <button class="btn" name="kind" value="csv" type="submit">CSV</button>
       <button class="btn" name="kind" value="xlsx" type="submit">Excel</button>
       <button class="btn" name="kind" value="pdf" type="submit">PDF</button>
       <button class="btn" name="kind" value="ics" type="submit">Calendar</button>
     </div>
+    <h3>Online systems</h3>
+    <p class="muted">RAMP is a practice file: Team_ID, Event_Type (Practice), Start_Date, Start_Time, End_Time, Location_ID, Notes. Times look like 07:15 PM. TeamLinkt, TeamSnap, and GameChanger use the columns those sites import.</p>
+    <div class="row">
+      <button class="btn" name="kind" value="system:ramp" type="submit">RAMP</button>
+      <button class="btn" name="kind" value="system:teamlinkt" type="submit">TeamLinkt</button>
+      <button class="btn" name="kind" value="system:teamsnap" type="submit">TeamSnap</button>
+      <button class="btn" name="kind" value="system:gamechanger" type="submit">GameChanger</button>
+    </div>
+    ${profiles.length ? `<label class="field"><span>Saved export</span><select name="profile"><option value="">Choose a saved export</option>${profiles.map((profile) => `<option value="${esc(profile.id)}">${esc(profile.name)}</option>`).join("")}</select></label><button class="btn" name="kind" value="profile" type="submit">Download saved export</button>` : ""}
     <button type="button" class="btn-ghost" id="export-close">Close</button>
   </form></div>`;
   root.querySelector("#export-close").onclick = () => { root.innerHTML = ""; };
@@ -869,9 +1003,18 @@ function openExport() {
     const kind = event.submitter.value;
     const params = new URLSearchParams({ start: data.get("start") + "T00:00:00", end: data.get("end") + "T23:59:59" });
     if (data.get("cancelled")) params.set("cancelled", "1");
+    let path = "/api/export/" + kind;
+    if (kind.startsWith("system:")) path = "/api/export/system/" + kind.slice(7);
+    if (kind === "profile") {
+      const profile = (PB.state.exportProfiles || []).find((item) => item.id === data.get("profile"));
+      if (!profile) { toast("Choose a saved export."); return; }
+      path = "/api/export/system/" + encodeURIComponent(profile.system);
+      params.set("profile", profile.id);
+    }
     try {
-      const file = await API.file("/api/export/" + kind + "?" + params.toString());
+      const file = await API.file(path + "?" + params.toString());
       downloadBlob(file.blob, file.filename);
+      if (file.notice) toast(file.notice);
       root.innerHTML = "";
     } catch (err) { toast(errorText(err)); }
   };

@@ -93,6 +93,13 @@ func (a *App) fail(w http.ResponseWriter, err error) {
 }
 
 func (a *App) download(w http.ResponseWriter, name, contentType string, body []byte) {
+	a.downloadNotice(w, name, contentType, body, "")
+}
+
+func (a *App) downloadNotice(w http.ResponseWriter, name, contentType string, body []byte, notice string) {
+	if notice != "" {
+		w.Header().Set("X-Pitchboard-Notice", notice)
+	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	w.WriteHeader(200)

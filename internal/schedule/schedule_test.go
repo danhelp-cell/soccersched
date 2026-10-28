@@ -61,6 +61,52 @@ func TestStrictLateNeedsAcknowledgement(t *testing.T) {
 	}
 }
 
+func TestAcademyUsesItsOwnHours(t *testing.T) {
+	db := club()
+	for i := range db.AgeGroups {
+		if db.AgeGroups[i].ID != "ag_academy" {
+			continue
+		}
+		db.AgeGroups[i].WindowStart = "16:30"
+		db.AgeGroups[i].WindowEnd = "20:30"
+		db.AgeGroups[i].Priority = "never"
+	}
+	db.Teams = append(db.Teams, model.Team{
+		ID: "academy", Name: "Academy Green", AgeGroupID: "ag_academy", Priority: "auto", Active: true,
+	})
+	res, err := Suggest(&db, SuggestRequest{
+		TeamIDs:         []string{"academy"},
+		EventTypeID:     "type_practice",
+		RangeStart:      "2026-10-26",
+		RangeEnd:        "2026-11-01",
+		DaysOfWeek:      []int{1},
+		SessionsPerWeek: 1,
+		DurationMinutes: 90,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Proposals) != 1 {
+		t.Fatalf("expected one academy practice, got %+v %+v", res.Proposals, res.Unscheduled)
+	}
+	if res.Proposals[0].Event.Start != "2026-10-26T16:30:00" {
+		t.Fatalf("academy should start at its own window, got %s", res.Proposals[0].Event.Start)
+	}
+}
+
+func TestAgeGroupPriorityOverride(t *testing.T) {
+	db := club()
+	for i := range db.AgeGroups {
+		if db.AgeGroups[i].ID == "ag_u16" {
+			db.AgeGroups[i].Priority = "always"
+		}
+	}
+	u16, _ := db.FindTeam("u16")
+	if !db.TeamIsPriority(u16) {
+		t.Fatal("an age group can force early hours even when the players are older")
+	}
+}
+
 func TestYoungerTeamsGetEarlierHours(t *testing.T) {
 	db := club()
 	res, err := Suggest(&db, SuggestRequest{
