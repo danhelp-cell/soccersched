@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soccer Scheduler — Upcoming Matches</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased h-screen overflow-hidden select-none">
+  <div class="flex h-full">
+    <!-- Left Sidebar -->
+    <aside class="w-64 bg-slate-900 text-slate-100 flex flex-col border-r border-slate-800 shrink-0">
+      <div class="px-6 py-5 border-b border-slate-800 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-white shadow-sm">
+          SS
+        </div>
+        <div>
+          <h1 class="text-base font-semibold tracking-tight leading-none">Soccer Scheduler</h1>
+          <p class="text-xs text-slate-400 mt-1">Desktop Match Manager</p>
+        </div>
+      </div>
+
+      <nav class="p-3 space-y-1 flex-1" id="sidebar-nav">
+        <a href="#upcoming" data-nav="upcoming" class="nav-link flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white">
+          <span>Upcoming Matches</span>
+        </a>
+        <a href="#teams" data-nav="teams" class="nav-link flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">
+          <span>Teams</span>
+        </a>
+        <a href="#standings" data-nav="standings" class="nav-link flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">
+          <span>Standings</span>
+        </a>
+        <a href="#settings" data-nav="settings" class="nav-link flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors">
+          <span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="p-4 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+        <span>Windows Desktop UI</span>
+        <a href="index.html" class="text-blue-400 hover:underline">Open Calendar</a>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <!-- Top Bar -->
+      <header class="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between gap-4 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="inline-flex rounded-lg border border-slate-300 bg-slate-50 p-0.5" role="group" aria-label="Week Selector">
+            <button type="button" data-week="previous" class="week-btn px-3 py-1.5 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 transition-colors">
+              Previous Week
+            </button>
+            <button type="button" data-week="current" class="week-btn px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white shadow-sm transition-colors">
+              Current Week
+            </button>
+            <button type="button" data-week="next" class="week-btn px-3 py-1.5 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 transition-colors">
+              Next Week
+            </button>
+          </div>
+          <input
+            type="date"
+            id="date-filter"
+            aria-label="Filter by Date"
+            class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600"
+          />
+        </div>
+
+        <div class="flex items-center gap-3">
+          <label for="team-filter" class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Filter by Team
+          </label>
+          <select
+            id="team-filter"
+            class="px-3.5 py-1.5 text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
+          >
+            <option value="ALL">All Teams</option>
+          </select>
+        </div>
+      </header>
+
+      <!-- Schedule Data Grid -->
+      <main class="flex-1 overflow-auto p-6">
+        <div class="mb-4 flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900" id="grid-heading">Upcoming Matches</h2>
+            <p class="text-xs text-slate-500" id="match-count">Showing 5 scheduled matches</p>
+          </div>
+          <button
+            type="button"
+            id="reset-filters"
+            class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            Reset Filters
+          </button>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <th class="py-3 px-4">Date</th>
+                <th class="py-3 px-4">Time</th>
+                <th class="py-3 px-4">Home Team</th>
+                <th class="py-3 px-4">Away Team</th>
+                <th class="py-3 px-4">Field Number</th>
+                <th class="py-3 px-4">Status</th>
+              </tr>
+            </thead>
+            <tbody id="schedule-tbody" class="divide-y divide-slate-200 text-sm"></tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Dummy JSON data representing 5 upcoming soccer matches
+    const UPCOMING_MATCHES = [
+      {
+        date: "2026-10-28",
+        time: "05:30 PM",
+        homeTeam: "Aurora U10 Green",
+        awayTeam: "Lakewood U10 Falcons",
+        fieldNumber: "Field 1 (SaskTel Turf A)",
+        status: "Scheduled",
+        week: "current"
+      },
+      {
+        date: "2026-10-29",
+        time: "06:45 PM",
+        homeTeam: "Aurora U12 Alliance",
+        awayTeam: "Eastside U12 Strikers",
+        fieldNumber: "Field 2 (SaskTel Turf B)",
+        status: "Confirmed",
+        week: "current"
+      },
+      {
+        date: "2026-10-30",
+        time: "07:15 PM",
+        homeTeam: "Hollandia U14 Boys",
+        awayTeam: "Aurora U14 City",
+        fieldNumber: "Field 6 (Forest Park)",
+        status: "Scheduled",
+        week: "current"
+      },
+      {
+        date: "2026-10-31",
+        time: "10:00 AM",
+        homeTeam: "Aurora U8 Black",
+        awayTeam: "SUSC U8 Royals",
+        fieldNumber: "Field 3 (Henk Ruys Court 1)",
+        status: "In Warmup",
+        week: "current"
+      },
+      {
+        date: "2026-11-01",
+        time: "01:30 PM",
+        homeTeam: "Aurora Advanced Academy",
+        awayTeam: "Lakewood U16 Premier",
+        fieldNumber: "Field 4 (Forest Park Turf)",
+        status: "Postponed",
+        week: "next"
+      }
+    ];
+
+    let activeWeek = "ALL";
+
+    function statusBadgeClasses(status) {
+      switch (status) {
+        case "Confirmed":
+          return "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/20";
+        case "In Warmup":
+          return "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/20";
+        case "Postponed":
+          return "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-600/20";
+        default:
+          return "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20";
+      }
+    }
+
+    function populateTeamDropdown(matches) {
+      const select = document.getElementById("team-filter");
+      const teams = new Set();
+      matches.forEach((m) => {
+        teams.add(m.homeTeam);
+        teams.add(m.awayTeam);
+      });
+
+      [...teams].sort().forEach((team) => {
+        const opt = document.createElement("option");
+        opt.value = team;
+        opt.textContent = team;
+        select.appendChild(opt);
+      });
+    }
+
+    function renderScheduleGrid(matches) {
+      const tbody = document.getElementById("schedule-tbody");
+      const countEl = document.getElementById("match-count");
+      tbody.innerHTML = "";
+
+      if (matches.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" class="py-10 px-4 text-center text-slate-400">
+              No matches match the selected filters.
+            </td>
+          </tr>
+        `;
+        countEl.textContent = "Showing 0 scheduled matches";
+        return;
+      }
+
+      matches.forEach((match) => {
+        const tr = document.createElement("tr");
+        tr.className = "hover:bg-blue-50/70 transition-colors cursor-pointer group";
+        tr.innerHTML = `
+          <td class="py-3.5 px-4 font-medium text-slate-900 whitespace-nowrap">${match.date}</td>
+          <td class="py-3.5 px-4 text-slate-600 whitespace-nowrap">${match.time}</td>
+          <td class="py-3.5 px-4 font-semibold text-slate-900 group-hover:text-blue-700">${match.homeTeam}</td>
+          <td class="py-3.5 px-4 text-slate-700">${match.awayTeam}</td>
+          <td class="py-3.5 px-4 text-slate-600">${match.fieldNumber}</td>
+          <td class="py-3.5 px-4">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusBadgeClasses(match.status)}">
+              ${match.status}
+            </span>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      countEl.textContent = `Showing ${matches.length} scheduled match${matches.length === 1 ? "" : "es"}`;
+    }
+
+    function applyFilters() {
+      const selectedTeam = document.getElementById("team-filter").value;
+      const selectedDate = document.getElementById("date-filter").value;
+
+      const filtered = UPCOMING_MATCHES.filter((match) => {
+        const matchesTeam =
+          selectedTeam === "ALL" ||
+          match.homeTeam === selectedTeam ||
+          match.awayTeam === selectedTeam;
+        const matchesDate = !selectedDate || match.date === selectedDate;
+        const matchesWeek = activeWeek === "ALL" || match.week === activeWeek;
+        return matchesTeam && matchesDate && matchesWeek;
+      });
+
+      renderScheduleGrid(filtered);
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      populateTeamDropdown(UPCOMING_MATCHES);
+      renderScheduleGrid(UPCOMING_MATCHES);
+
+      document.getElementById("team-filter").addEventListener("change", applyFilters);
+      document.getElementById("date-filter").addEventListener("change", applyFilters);
+
+      document.querySelectorAll(".week-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".week-btn").forEach((b) => {
+            b.className = "week-btn px-3 py-1.5 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 transition-colors";
+          });
+          btn.className = "week-btn px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white shadow-sm transition-colors";
+          activeWeek = btn.dataset.week === "current" ? "ALL" : btn.dataset.week;
+          applyFilters();
+        });
+      });
+
+      document.getElementById("reset-filters").addEventListener("click", () => {
+        document.getElementById("team-filter").value = "ALL";
+        document.getElementById("date-filter").value = "";
+        activeWeek = "ALL";
+        document.querySelectorAll(".week-btn").forEach((b) => {
+          const isCurrent = b.dataset.week === "current";
+          b.className = isCurrent
+            ? "week-btn px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white shadow-sm transition-colors"
+            : "week-btn px-3 py-1.5 text-xs font-semibold rounded-md text-slate-600 hover:text-slate-900 transition-colors";
+        });
+        renderScheduleGrid(UPCOMING_MATCHES);
+      });
+    });
+  </script>
+</body>
+</html>

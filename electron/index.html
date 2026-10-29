@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline';"
+  />
+  <title>Soccer Scheduler — Weekly Practice Calendar</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-badge">SS</div>
+        <div>
+          <h1 class="brand-title">Soccer Scheduler</h1>
+          <p class="brand-subtitle">Aurora Soccer Club</p>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Main Navigation">
+        <a href="index.html" class="nav-item active">Weekly Calendar</a>
+        <a href="schedule-grid.html" class="nav-item">Upcoming Matches Grid</a>
+      </nav>
+
+      <div class="panel">
+        <h2 class="panel-heading">Filters</h2>
+        <label class="control">
+          <span>Age Group</span>
+          <select id="filter-age">
+            <option value="">All Age Groups</option>
+          </select>
+        </label>
+        <label class="control">
+          <span>Surface Type</span>
+          <select id="filter-surface">
+            <option value="">All Surfaces (Turf &amp; Grass)</option>
+            <option value="Turf">Turf</option>
+            <option value="Grass">Grass</option>
+          </select>
+        </label>
+        <label class="control">
+          <span>Location</span>
+          <select id="filter-location">
+            <option value="">All Locations</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-heading">Selected Session</h2>
+        <div id="session-details" class="session-card">
+          <p class="muted">Click, drag, or resize any practice on the calendar to inspect its details.</p>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <span id="status-log">Ready — drag or resize events on the grid</span>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button type="button" id="btn-prev" class="btn">Previous Week</button>
+          <button type="button" id="btn-today" class="btn">Current Week</button>
+          <button type="button" id="btn-next" class="btn">Next Week</button>
+          <h2 id="calendar-title" class="calendar-title"></h2>
+        </div>
+        <div class="topbar-right">
+          <span class="legend-pill turf">Turf</span>
+          <span class="legend-pill grass">Grass</span>
+          <button type="button" id="btn-add-practice" class="btn btn-primary">+ Quick Add Practice</button>
+        </div>
+      </header>
+
+      <section class="calendar-wrapper">
+        <div id="calendar"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="add-modal" class="modal">
+    <form id="add-form" method="dialog">
+      <h3>New Soccer Practice</h3>
+      <label class="control">
+        <span>Team / Practice Title</span>
+        <input type="text" id="input-title" required placeholder="e.g., U10 Green Practice" />
+      </label>
+      <div class="row">
+        <label class="control">
+          <span>Age Group</span>
+          <select id="input-age">
+            <option value="U8">U8</option>
+            <option value="U10" selected>U10</option>
+            <option value="U12">U12</option>
+            <option value="U14">U14</option>
+            <option value="U16">U16</option>
+            <option value="Academy">Academy</option>
+          </select>
+        </label>
+        <label class="control">
+          <span>Surface Type</span>
+          <select id="input-surface">
+            <option value="Turf">Turf</option>
+            <option value="Grass">Grass</option>
+          </select>
+        </label>
+      </div>
+      <label class="control">
+        <span>Location</span>
+        <select id="input-location">
+          <option value="SaskTel Sports Centre — Turf A">SaskTel Sports Centre — Turf A</option>
+          <option value="SaskTel Sports Centre — Turf B">SaskTel Sports Centre — Turf B</option>
+          <option value="Forest Park — Grass 1">Forest Park — Grass 1</option>
+          <option value="Forest Park — Grass 2">Forest Park — Grass 2</option>
+          <option value="Forest Park Turf — Field 1">Forest Park Turf — Field 1</option>
+        </select>
+      </label>
+      <div class="row">
+        <label class="control">
+          <span>Start</span>
+          <input type="datetime-local" id="input-start" required />
+        </label>
+        <label class="control">
+          <span>End</span>
+          <input type="datetime-local" id="input-end" required />
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="btn-cancel" class="btn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add to Calendar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/fullcalendar/index.global.min.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
