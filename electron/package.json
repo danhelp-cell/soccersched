@@ -1,0 +1,19 @@
+{
+  "name": "pitchboard-electron",
+  "version": "1.0.0",
+  "description": "Soccer scheduling desktop application powered by Electron and FullCalendar",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": [
+    "soccer",
+    "scheduler",
+    "fullcalendar",
+    "electron"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
