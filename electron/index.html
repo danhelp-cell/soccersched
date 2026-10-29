@@ -22,16 +22,24 @@
       </div>
 
       <nav class="nav-list" aria-label="Main Navigation">
-        <a href="index.html" class="nav-item active">Weekly Calendar</a>
+        <button type="button" data-view="calendar" class="nav-item active">Weekly Calendar</button>
+        <button type="button" data-view="teams" class="nav-item">Teams Database</button>
+        <button type="button" data-view="settings" class="nav-item">Settings</button>
         <a href="schedule-grid.html" class="nav-item">Upcoming Matches Grid</a>
       </nav>
 
-      <div class="panel">
+      <div class="panel" id="sidebar-filters">
         <h2 class="panel-heading">Filters</h2>
         <label class="control">
-          <span>Age Group</span>
+          <span>Team</span>
+          <select id="filter-team">
+            <option value="">All Teams</option>
+          </select>
+        </label>
+        <label class="control">
+          <span>Group</span>
           <select id="filter-age">
-            <option value="">All Age Groups</option>
+            <option value="">All Groups</option>
           </select>
         </label>
         <label class="control">
@@ -63,45 +71,193 @@
     </aside>
 
     <main class="main-area">
-      <header class="topbar">
-        <div class="topbar-left">
-          <button type="button" id="btn-prev" class="btn">Previous Week</button>
-          <button type="button" id="btn-today" class="btn">Current Week</button>
-          <button type="button" id="btn-next" class="btn">Next Week</button>
-          <h2 id="calendar-title" class="calendar-title"></h2>
-        </div>
-        <div class="topbar-right">
-          <span class="legend-pill turf">Turf</span>
-          <span class="legend-pill grass">Grass</span>
-          <button type="button" id="btn-add-practice" class="btn btn-primary">+ Quick Add Practice</button>
-        </div>
-      </header>
+      <!-- CALENDAR VIEW -->
+      <div id="view-calendar" class="view-section">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button type="button" id="btn-prev" class="btn">Previous Week</button>
+            <button type="button" id="btn-today" class="btn">Current Week</button>
+            <button type="button" id="btn-next" class="btn">Next Week</button>
+            <h2 id="calendar-title" class="calendar-title"></h2>
+          </div>
+          <div class="topbar-right">
+            <span class="legend-pill turf">Turf</span>
+            <span class="legend-pill grass">Grass</span>
+            <span class="legend-pill late" id="legend-priority">Late Priority (&gt; 17:30)</span>
+            <button type="button" id="btn-add-practice" class="btn btn-primary">+ Quick Add Practice</button>
+          </div>
+        </header>
 
-      <section class="calendar-wrapper">
-        <div id="calendar"></div>
-      </section>
+        <section class="calendar-wrapper">
+          <div id="calendar"></div>
+        </section>
+      </div>
+
+      <!-- TEAMS DATABASE VIEW -->
+      <div id="view-teams" class="view-section" hidden>
+        <header class="topbar">
+          <div class="topbar-left">
+            <h2 class="calendar-title">Teams Database</h2>
+            <span class="sub-pill" id="teams-count-badge">0 teams</span>
+          </div>
+          <div class="topbar-right">
+            <button type="button" class="btn" data-jump-view="settings">Configure Priority Groups</button>
+            <button type="button" class="btn btn-primary" data-jump-view="calendar">Back to Calendar</button>
+          </div>
+        </header>
+
+        <section class="page-content">
+          <div class="page-grid">
+            <div class="card">
+              <h3 id="team-form-heading">Create / Edit Team</h3>
+              <p class="card-subtitle">
+                Assign each team to a group from <code>priorityGroups</code> and optionally set external system IDs such as <code>rampTeamId</code>.
+              </p>
+              <form id="team-form">
+                <input type="hidden" id="team-id" value="" />
+                <label class="control-light">
+                  <span>Team Name *</span>
+                  <input type="text" id="team-name" required placeholder="e.g., Aurora U9 Black" />
+                </label>
+                <label class="control-light">
+                  <span>Assigned Group (populated from priorityGroups) *</span>
+                  <select id="team-group" required></select>
+                </label>
+                <div class="row">
+                  <label class="control-light">
+                    <span>RAMP Team ID (<code>rampTeamId</code>)</span>
+                    <input type="text" id="team-ramp-id" placeholder="e.g., 1004" />
+                  </label>
+                  <label class="control-light">
+                    <span>TeamLinkt / TeamSnap ID</span>
+                    <input type="text" id="team-external-id" placeholder="e.g., TL-U9-BLK" />
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary" id="team-submit-btn">Save Team</button>
+                  <button type="button" class="btn" id="team-cancel-edit" hidden>Cancel Edit</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card">
+              <h3>Registered Club Teams</h3>
+              <p class="card-subtitle">
+                Teams belonging to a group in <code>priorityGroups</code> receive a dashed red outline on the calendar when scheduled after <code>priorityHourLimit</code>.
+              </p>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Team Name</th>
+                      <th>Assigned Group</th>
+                      <th>Priority Status</th>
+                      <th>rampTeamId</th>
+                      <th>External ID</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="teams-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- SETTINGS VIEW -->
+      <div id="view-settings" class="view-section" hidden>
+        <header class="topbar">
+          <div class="topbar-left">
+            <h2 class="calendar-title">Scheduler Settings</h2>
+          </div>
+          <div class="topbar-right">
+            <button type="button" class="btn" id="btn-reset-defaults">Reset Defaults</button>
+            <button type="button" class="btn btn-primary" data-jump-view="calendar">Back to Calendar</button>
+          </div>
+        </header>
+
+        <section class="page-content">
+          <div class="page-grid">
+            <div class="card">
+              <h3>Priority Groups (<code>priorityGroups</code>)</h3>
+              <p class="card-subtitle">
+                Define the array of <code>priorityGroups</code> (e.g., <code>U9</code>, <code>U11</code>, <code>Academy</code>). These groups populate the Teams Database group dropdown and trigger the dashed red outline in FullCalendar's <code>eventDidMount</code> when scheduled later than <code>priorityHourLimit</code>.
+              </p>
+
+              <div id="priority-group-tags" class="tag-list" aria-label="Priority Groups"></div>
+
+              <form id="add-priority-group-form" class="inline-form">
+                <input
+                  type="text"
+                  id="new-priority-group"
+                  placeholder="Add group (e.g., U7, U9, U11, Academy)"
+                  required
+                />
+                <button type="submit" class="btn btn-primary">+ Add Priority Group</button>
+              </form>
+
+              <hr class="divider" />
+
+              <h4>Non-Priority Groups (Optional)</h4>
+              <p class="card-subtitle">
+                Additional club groups (such as older youth or adult divisions) that appear in the Teams Database dropdown without triggering the early-hour priority warning:
+              </p>
+              <div id="other-group-tags" class="tag-list"></div>
+              <form id="add-other-group-form" class="inline-form">
+                <input
+                  type="text"
+                  id="new-other-group"
+                  placeholder="Add non-priority group (e.g., U15, U17, Senior)"
+                  required
+                />
+                <button type="submit" class="btn">+ Add Standard Group</button>
+              </form>
+            </div>
+
+            <div class="card">
+              <h3>Priority Hour Limit (<code>priorityHourLimit</code>)</h3>
+              <p class="card-subtitle">
+                When an event's associated Team belongs to a group in <code>priorityGroups</code> and its start time is later than <code>priorityHourLimit</code>, FullCalendar's <code>eventDidMount</code> applies the <code>.late-priority-outline</code> dashed red outline CSS class.
+              </p>
+
+              <form id="settings-limit-form">
+                <div class="row">
+                  <label class="control-light">
+                    <span>Priority Hour Limit (24h time)</span>
+                    <input type="time" id="setting-priority-limit" value="17:30" required />
+                  </label>
+                  <label class="control-light">
+                    <span>Current <code>priorityGroups</code> JSON</span>
+                    <input type="text" id="setting-priority-json" readonly />
+                  </label>
+                </div>
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-primary">Save Priority Hour Limit</button>
+                </div>
+              </form>
+
+              <div class="rule-preview" id="settings-rule-preview"></div>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
+  <!-- QUICK ADD PRACTICE MODAL -->
   <dialog id="add-modal" class="modal">
     <form id="add-form" method="dialog">
       <h3>New Soccer Practice</h3>
       <label class="control">
-        <span>Team / Practice Title</span>
-        <input type="text" id="input-title" required placeholder="e.g., U10 Green Practice" />
+        <span>Team (from Teams Database)</span>
+        <select id="input-team" required></select>
+      </label>
+      <label class="control">
+        <span>Custom Practice Title (optional)</span>
+        <input type="text" id="input-title" placeholder="Defaults to '<Team Name> Practice'" />
       </label>
       <div class="row">
-        <label class="control">
-          <span>Age Group</span>
-          <select id="input-age">
-            <option value="U8">U8</option>
-            <option value="U10" selected>U10</option>
-            <option value="U12">U12</option>
-            <option value="U14">U14</option>
-            <option value="U16">U16</option>
-            <option value="Academy">Academy</option>
-          </select>
-        </label>
         <label class="control">
           <span>Surface Type</span>
           <select id="input-surface">
@@ -109,17 +265,17 @@
             <option value="Grass">Grass</option>
           </select>
         </label>
+        <label class="control">
+          <span>Location</span>
+          <select id="input-location">
+            <option value="SaskTel Sports Centre — Turf A">SaskTel Sports Centre — Turf A</option>
+            <option value="SaskTel Sports Centre — Turf B">SaskTel Sports Centre — Turf B</option>
+            <option value="Forest Park — Grass 1">Forest Park — Grass 1</option>
+            <option value="Forest Park — Grass 2">Forest Park — Grass 2</option>
+            <option value="Forest Park Turf — Field 1">Forest Park Turf — Field 1</option>
+          </select>
+        </label>
       </div>
-      <label class="control">
-        <span>Location</span>
-        <select id="input-location">
-          <option value="SaskTel Sports Centre — Turf A">SaskTel Sports Centre — Turf A</option>
-          <option value="SaskTel Sports Centre — Turf B">SaskTel Sports Centre — Turf B</option>
-          <option value="Forest Park — Grass 1">Forest Park — Grass 1</option>
-          <option value="Forest Park — Grass 2">Forest Park — Grass 2</option>
-          <option value="Forest Park Turf — Field 1">Forest Park Turf — Field 1</option>
-        </select>
-      </label>
       <div class="row">
         <label class="control">
           <span>Start</span>
