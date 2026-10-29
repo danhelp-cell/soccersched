@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pitchboard</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="icon" href="/vendor/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <div id="setup" hidden></div>
+  <div id="shell" class="shell" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"></span>
+        <div>
+          <div class="word">Pitchboard</div>
+          <div class="club" id="club-name"></div>
+        </div>
+      </div>
+      <div class="top-center" id="top-center"></div>
+      <div class="top-actions" id="top-actions"></div>
+    </header>
+    <div class="workspace" id="workspace">
+      <nav class="rail" aria-label="Sections">
+        <button type="button" data-view="calendar" class="rail-btn is-active">Calendar</button>
+        <button type="button" data-view="plan" class="rail-btn">Plan</button>
+        <button type="button" data-view="teams" class="rail-btn">Teams</button>
+        <button type="button" data-view="places" class="rail-btn">Places</button>
+        <button type="button" data-view="settings" class="rail-btn">Settings</button>
+      </nav>
+      <aside class="sidebar" id="sidebar"></aside>
+      <main class="main">
+        <div id="cal-wrap">
+          <div class="legend" id="legend"></div>
+          <div id="calendar"></div>
+        </div>
+        <div id="page" hidden></div>
+      </main>
+      <aside class="inspector" id="inspector"></aside>
+    </div>
+    <footer class="statusbar" id="status"></footer>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
+  <div id="modal-root"></div>
+  <script src="/vendor/fullcalendar/index.global.min.js"></script>
+  <script src="/js/util.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/calendar.js"></script>
+  <script src="/js/views.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

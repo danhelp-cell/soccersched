@@ -1,0 +1,7 @@
+PitchboardData/
+*.log
+*.tmp
+*.bak
+dist/
+release/*.zip
+.DS_Store
